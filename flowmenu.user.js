@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.21
+// @version      1.3
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -55,7 +55,7 @@
         }
         .amount-input:focus, .extra-input:focus {
             border: 1px solid #2898CB;
-            box-shadow: 0 0 5px #2898CB;
+            box-shadow: 0 0 2px #2898CB;
         }
 
         #controls-container {
@@ -131,6 +131,12 @@
             color: white;
             background-color: #74AC18;
         }
+        .center{
+            height: 30px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
 
     `);
 
@@ -139,6 +145,7 @@
     popup.id = 'select-popup';
     popup.style.height = '80vh';
     popup.innerHTML = `
+        <div class="center">รายการสินค้า</div>
         <table id="options-table">
             <thead>
                 <tr>
@@ -150,10 +157,10 @@
             <tbody id="options-list"></tbody>
         </table>
         <div id="controls-container">
-            <div id="selected-count">สินค้า: 0 รายการ | รายการในบิล: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
+            <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | เลือก: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
             <button id="submit-selections">ยืนยัน</button>
             <button id="clear-amount">ล้างจำนวน</button>
-            <button id="product-list">รายการสินค้า</button>
+            <button id="product-list">ตั้งค่า</button>
             <button id="close-popup">ปิด</button>
         </div>
     `;
@@ -177,6 +184,7 @@
 
     openPopupButton.addEventListener('click', () => {
         popup.style.display = 'block';
+        updateSelectedCount();
     });
 
     onUrlChange();
@@ -197,6 +205,12 @@
         amountInputs.forEach(function(input) {input.value = 0;});
         extraInputs.forEach(function(input) {input.value = 0;});
         updateSelectedCount();
+    });
+
+    document.body.addEventListener("input", function(event) {
+        if (event.target.matches(".amount-input, .extra-input")) {
+            updateRowColors();
+        }
     });
 
     function onUrlChange() {
@@ -399,12 +413,35 @@
         processNextInput();
     });
 
+    function updateRowColors() {
+        let table = document.querySelector("#options-table"); // Target the table
+        if (!table) return; // Exit if table is not found
+
+        table.querySelectorAll("tbody tr").forEach(row => {
+            let amountInput = row.querySelector(".amount-input"); // Get amount input
+            let extraInput = row.querySelector(".extra-input"); // Get extra input
+            let productCell = row.querySelector("td:first-child");
+
+
+            let amount = amountInput ? parseInt(amountInput.value) || 0 : 0;
+            let extra = extraInput ? parseInt(extraInput.value) || 0 : 0;
+
+            // If either amount or extra is greater than 0, change color
+            if (amount > 0 || extra > 0) {
+                row.style.backgroundColor = "#3CAEDA"; // Highlight row
+                if (productCell) productCell.style.fontWeight = "bold"
+            } else {
+                row.style.backgroundColor = ""; // Reset to default
+                if (productCell) productCell.style.fontWeight = ""
+            }
+        });
+    }
 
     function openTextAreaPopup() {
         const txtPopup = document.createElement('div');
         txtPopup.style.position = 'fixed';
         txtPopup.style.height = '90vh';
-        txtPopup.style.width = '600px';
+        txtPopup.style.width = '700px';
         txtPopup.style.top = '50%';
         txtPopup.style.left = '50%';
         txtPopup.style.transform = 'translate(-50%, -50%)';
@@ -434,7 +471,7 @@
         saveButton.style.padding = '10px 15px';
         saveButton.style.cursor = 'pointer';
         saveButton.addEventListener('click', function() {
-            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
+            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0 );
             GM_setValue('productList', productList); // Save the list
             alert('บันทึกรายการสินค้า!');
             document.body.removeChild(txtPopup); // Close the txtPopup after saving
@@ -468,8 +505,10 @@
         optionsList.innerHTML = ""; // Clear existing rows
 
         productList.forEach(product => {
+            if(product.startsWith('//')){
+                return;
+            }
             const row = document.createElement('tr');
-
             const productCell = document.createElement('td');
             productCell.textContent = product;
 
@@ -520,13 +559,8 @@
             row.appendChild(extraCell);
             optionsList.appendChild(row);
         });
+        updateSelectedCount();
     }
-
-    let productList = GM_getValue('productList', []);
-    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
-
-    displayProductList();
-
     // Function to update selected count
     function updateSelectedCount() {
         const amountInputs = document.querySelectorAll('.amount-input');
@@ -535,11 +569,12 @@
         let selectedCount = 0; // Number of selected items (amount > 0 or extra > 0)
         let rowCount = 0; // Number of rows used (main + extra rows)
         let totalItems = 0; // Total of amount + extra for all selected items
-
+        let allItems = 0;
+        let extraCount = 0;
         amountInputs.forEach((amountInput, index) => {
             const amountValue = parseInt(amountInput.value, 10) || 0;
             const extraValue = parseInt(extraInputs[index].value, 10) || 0;
-
+            allItems++;
             if (amountValue > 0 || extraValue > 0) {
                 selectedCount++; // Count selected items
                 totalItems += amountValue + extraValue; // Add to total
@@ -548,11 +583,20 @@
                 // - 1 row for amount > 0
                 // - 1 additional row for extra > 0
                 if (amountValue > 0) rowCount++;
-                if (extraValue > 0) rowCount++;
+                if (extraValue > 0) {
+                    rowCount++;
+                    extraCount++;
+                }
             }
         });
 
         // Update the display
-        document.getElementById('selected-count').innerText = `สินค้า: ${selectedCount} รายการ | รายการในบิล: ${rowCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
+        document.getElementById('selected-count').innerText = `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
+        updateRowColors();
     }
+
+    let productList = GM_getValue('productList', []);
+    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
+
+    displayProductList();
 })();
