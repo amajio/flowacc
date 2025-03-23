@@ -439,7 +439,8 @@
             alert('บันทึกรายการสินค้า!');
             document.body.removeChild(txtPopup); // Close the txtPopup after saving
             displayProductList(); // Update the displayed list
-            popup.style.display = 'block';
+            const paths = ["invoices/new", "billing-notes/new", "quotations/new"];
+            popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
         });
         buttonContainer.appendChild(saveButton);
 
@@ -452,7 +453,8 @@
         closeButton.style.cursor = 'pointer';
         closeButton.addEventListener('click', function() {
             document.body.removeChild(txtPopup); // Close the txtPopup without saving
-            popup.style.display = 'block';
+            const paths = ["invoices/new", "billing-notes/new", "quotations/new"];
+            popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
         });
         buttonContainer.appendChild(closeButton);
         txtPopup.appendChild(buttonContainer);
