@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.2
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -16,32 +16,6 @@
 
 (function () {
     'use strict';
-
-    // Retrieve the saved URL (if any)
-    let PRODUCT_URL = GM_getValue("userURL", "");
-
-    // If no URL is saved, prompt the user to enter one
-    if (!PRODUCT_URL) {
-        PRODUCT_URL = prompt("ใส่ลิงค์ URL [ลิงค์ไปรายการสินค้า]:", "https://example.com");
-        if (PRODUCT_URL) {
-            GM_setValue("userURL", PRODUCT_URL); // Save it permanently
-            alert("บันทึก: " + PRODUCT_URL);
-            location.reload();
-        } else {
-            alert("ไม่ได้ใส่ลิงค์ URL. ตั้งค่าได้ที่ Tampermonkey เมนู Set URL");
-        }
-    }
-
-    // Add menu button to allow updating the URL later
-    GM_registerMenuCommand("ตั้งค่าลิงค์รายการสินค้า", function() {
-        let newURL = prompt("ใส่ลิงค์ URL:", PRODUCT_URL);
-        if (newURL) {
-            GM_setValue("userURL", newURL);
-            alert("บันทึก: " + newURL);
-            location.reload();
-        }
-    });
-
 
     GM_addStyle(`
         #select-popup {
@@ -77,6 +51,7 @@
             padding: 5px;
             box-sizing: border-box;
         }
+
         #controls-container {
             position: sticky;
             bottom: 0;
@@ -90,38 +65,40 @@
             font-size: 15px;
             color: #333;
         }
-        #submit-selections, #clear-amount, #close-popup {
-            margin-right: 10px;
+
+        #submit-selections, #clear-amount, #close-popup, #product-list {
             padding: 10px 30px;
             font-size: 16px;
             cursor: pointer;
-        }
-        #submit-selections:hover {
-            background-color: #08CB2F;
             color: white;
+            border: none;
+            border-radius: 5px;
+            background-color: #2898CB;
         }
+
+        #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#product-list:hover {
+            background-color: #2887B6;
+        }
+
+        #save-product-list, #close-product-list{
+            position: sticky;
+            bottom: 0;
+            border-radius: 5px;
+            font-size: 16px;
+            background-color: #2898CB;
+            color: white;
+            border: none;
+        }
+
+        #save-product-list:hover,#close-product-list:hover {
+            background-color: #2887B6;
+        }
+
         #close-popup {
-            background: #b71c1c;
-            color: white;
-            border: none;
+            position: absolute;
+            right: 0px;
         }
-        #close-popup:hover {
-            background-color: red;
-            color: white;
-        }
-        #clear-amount {
-            background: #b71c1c;
-            color: white;
-            border: none;
-        }
-        #submit-selections {
-            background: green;
-            color: white;
-            border: none;
-        }
-        #clear-amount:hover {
-            background-color: red;
-        }
+
         #openPopupButton {
             z-index: 99999;
             top: 19px;
@@ -130,19 +107,21 @@
             padding: 10px 30px;
             font-size: 16px;
             cursor: pointer;
-            background-color: #4CAF50;
+            background-color: #88C426;
             color: white;
             border: none;
         }
+
         #openPopupButton:hover {
             color: white;
-            background-color: #45a049;
+            background-color: #74AC18;
         }
     `);
 
     // Create the popup HTML structure
     const popup = document.createElement('div');
     popup.id = 'select-popup';
+    popup.style.height = '80vh';
     popup.innerHTML = `
         <table id="options-table">
             <thead>
@@ -158,6 +137,7 @@
             <div id="selected-count">สินค้า: 0 รายการ | รายการในบิล: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
             <button id="submit-selections">ยืนยัน</button>
             <button id="clear-amount">ล้างจำนวน</button>
+            <button id="product-list">รายการสินค้า</button>
             <button id="close-popup">ปิด</button>
         </div>
     `;
@@ -175,7 +155,7 @@
     document.body.appendChild(popup);
     const openPopupButton = document.createElement('button');
     openPopupButton.id = 'openPopupButton';
-    openPopupButton.innerText = 'Open Menu';
+    openPopupButton.innerText = 'รายการสินค้า';
     openPopupButton.style.borderRadius = '5px';
     document.body.appendChild(openPopupButton);
 
@@ -185,9 +165,15 @@
 
     onUrlChange();
 
+    document.getElementById('product-list').addEventListener('click', () => {
+        popup.style.display = 'none';
+        openTextAreaPopup();
+    });
+
     document.getElementById('close-popup').addEventListener('click', () => {
         popup.style.display = 'none';
     });
+
     document.getElementById('clear-amount').addEventListener('click', () => {
         // Clear all amount and extra input fields
         const amountInputs = document.querySelectorAll('.amount-input');
@@ -397,6 +383,117 @@
         processNextInput();
     });
 
+
+    function openTextAreaPopup() {
+        const txtPopup = document.createElement('div');
+        txtPopup.style.position = 'fixed';
+        txtPopup.style.height = '90vh';
+        txtPopup.style.width = '600px';
+        txtPopup.style.top = '50%';
+        txtPopup.style.left = '50%';
+        txtPopup.style.transform = 'translate(-50%, -50%)';
+        txtPopup.style.backgroundColor = '#fff';
+        txtPopup.style.padding = '20px';
+        txtPopup.style.border = '1px solid #ccc';
+        txtPopup.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+        txtPopup.style.zIndex = '9999';
+        txtPopup.style.overflow = 'auto';
+
+        // Create a textarea element
+        const textArea = document.createElement('textarea');
+        textArea.style.width = '100%';
+        textArea.style.height = '80vh';
+        textArea.style.fontSize = '16px'; // Adjusted font size for readability
+        textArea.value = productList.join('\n'); // Fill textarea with current list
+        txtPopup.appendChild(textArea);
+
+        // Create Save button
+        const saveButton = document.createElement('button');
+        saveButton.id = 'save-product-list';
+        saveButton.textContent = 'Save List';
+        saveButton.style.marginRight = '10px';
+        //saveButton.style.borderWidth = '1px';
+        //saveButton.style.color = 'black';
+        //saveButton.style.background = 'white';
+        saveButton.style.marginTop = '10px';
+        saveButton.style.padding = '5px 15px';
+        saveButton.style.cursor = 'pointer';
+        saveButton.addEventListener('click', function() {
+            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
+            GM_setValue('productList', productList); // Save the list
+            alert('บันทึกรายการสินค้า!');
+            document.body.removeChild(txtPopup); // Close the txtPopup after saving
+            displayProductList(); // Update the displayed list
+            popup.style.display = 'block';
+        });
+        txtPopup.appendChild(saveButton);
+
+        // Create Close button
+        const closeButton = document.createElement('button');
+        closeButton.id = 'close-product-list';
+        closeButton.textContent = 'Close';
+        //closeButton.style.borderWidth = '1px';
+        //closeButton.style.color = 'black';
+        //closeButton.style.background = 'white';
+        closeButton.style.marginTop = '10px';
+        closeButton.style.padding = '5px 15px';
+        closeButton.style.cursor = 'pointer';
+        closeButton.addEventListener('click', function() {
+            document.body.removeChild(txtPopup); // Close the txtPopup without saving
+            popup.style.display = 'block';
+        });
+        txtPopup.appendChild(closeButton);
+
+        // Append the txtPopup to the body
+        document.body.appendChild(txtPopup);
+    }
+
+    function displayProductList() {
+        const optionsList = document.getElementById('options-list');
+        optionsList.innerHTML = ""; // Clear existing rows
+
+        productList.forEach(product => {
+            const row = document.createElement('tr');
+
+            const productCell = document.createElement('td');
+            productCell.textContent = product;
+
+            const amountCell = document.createElement('td');
+            const amountInput = document.createElement('input');
+            amountInput.style.width = '60px';
+            amountInput.type = 'number';
+            amountInput.placeholder = 'Amount';
+            amountInput.className = 'amount-input';
+            amountInput.min = '0';
+            amountInput.value = '0';
+            amountInput.setAttribute('data-product', product);
+            amountInput.addEventListener('input', updateSelectedCount);
+            amountCell.appendChild(amountInput);
+
+            const extraCell = document.createElement('td');
+            const extraInput = document.createElement('input');
+            extraInput.style.width = '60px';
+            extraInput.type = 'number';
+            extraInput.placeholder = 'Extra';
+            extraInput.className = 'extra-input';
+            extraInput.min = '0';
+            extraInput.value = '0';
+            extraInput.setAttribute('data-product', product);
+            extraInput.addEventListener('input', updateSelectedCount);
+            extraCell.appendChild(extraInput);
+
+            row.appendChild(productCell);
+            row.appendChild(amountCell);
+            row.appendChild(extraCell);
+            optionsList.appendChild(row);
+        });
+    }
+
+    let productList = GM_getValue('productList', []);
+    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
+
+    displayProductList();
+    /*
     // Fetch product list from Pastebin and populate UI
     GM_xmlhttpRequest({
         method: "GET",
@@ -461,7 +558,7 @@
         onerror: function (error) {
             console.error('Error fetching product list:', error);
         }
-    });
+    });*/
 
     // Function to update selected count
     function updateSelectedCount() {
