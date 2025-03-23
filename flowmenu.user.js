@@ -410,13 +410,10 @@
         // Create Save button
         const saveButton = document.createElement('button');
         saveButton.id = 'save-product-list';
-        saveButton.textContent = 'Save List';
+        saveButton.textContent = 'บันทึกรายการ';
         saveButton.style.marginRight = '10px';
-        //saveButton.style.borderWidth = '1px';
-        //saveButton.style.color = 'black';
-        //saveButton.style.background = 'white';
         saveButton.style.marginTop = '10px';
-        saveButton.style.padding = '5px 15px';
+        saveButton.style.padding = '10px 15px';
         saveButton.style.cursor = 'pointer';
         saveButton.addEventListener('click', function() {
             productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
@@ -431,12 +428,9 @@
         // Create Close button
         const closeButton = document.createElement('button');
         closeButton.id = 'close-product-list';
-        closeButton.textContent = 'Close';
-        //closeButton.style.borderWidth = '1px';
-        //closeButton.style.color = 'black';
-        //closeButton.style.background = 'white';
+        closeButton.textContent = 'ปิด';
         closeButton.style.marginTop = '10px';
-        closeButton.style.padding = '5px 15px';
+        closeButton.style.padding = '10px 15px';
         closeButton.style.cursor = 'pointer';
         closeButton.addEventListener('click', function() {
             document.body.removeChild(txtPopup); // Close the txtPopup without saving
