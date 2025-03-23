@@ -406,7 +406,7 @@
 
             if (!contentType.includes("text/plain") && !contentType.includes("text")) {
                 console.error("Unexpected content type:", contentType);
-
+                alert("Error: The response is not plain text.");
                 return;
             }
 
