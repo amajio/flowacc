@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.11
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -24,7 +24,7 @@
     if (!PRODUCT_URL) {
         PRODUCT_URL = prompt("ใส่ลิงค์ URL [ลิงค์ไปรายการสินค้า]:", "https://example.com");
         if (PRODUCT_URL) {
-            GM_setValue("userURL", PRODUCT_URL);  // Save it permanently
+            GM_setValue("userURL", PRODUCT_URL); // Save it permanently
             alert("บันทึก: " + PRODUCT_URL);
         } else {
             alert("ไม่ได้ใส่ลิงค์ URL. ตั้งค่าได้ที่ Tampermonkey เมนู Set URL");
@@ -32,7 +32,7 @@
     }
 
     // Add menu button to allow updating the URL later
-    GM_registerMenuCommand("Set URL", function() {
+    GM_registerMenuCommand("ตั้งค่าลิงค์รายการสินค้า", function() {
         let newURL = prompt("ใส่ลิงค์ URL:", PRODUCT_URL);
         if (newURL) {
             GM_setValue("userURL", newURL);
@@ -401,6 +401,15 @@
         url: PRODUCT_URL,
         overrideMimeType: "text/plain; charset=utf-8",
         onload: function (response) {
+            let contentType = response.responseHeaders.match(/Content-Type:\s*([^\r\n]+)/i);
+            contentType = contentType ? contentType[1] : "";
+
+            if (!contentType.includes("text/plain") && !contentType.includes("text")) {
+                console.error("Unexpected content type:", contentType);
+
+                return;
+            }
+
             let rawText = response.responseText;
             let productList = rawText
                 .replace(/\r\n/g, "\n")
