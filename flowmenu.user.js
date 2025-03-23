@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.21
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -47,9 +47,15 @@
             background-color: #f2f2f2;
         }
         .amount-input, .extra-input {
-            width: 80px;
+            width: 65px;
             padding: 5px;
             box-sizing: border-box;
+            border-radius: 5px;
+            border: 1px solid #808080;
+        }
+        .amount-input:focus, .extra-input:focus {
+            border: 1px solid #2898CB;
+            box-shadow: 0 0 5px #2898CB;
         }
 
         #controls-container {
@@ -59,6 +65,15 @@
             padding: 10px 0;
             border-top: 1px solid #ccc;
         }
+
+        #buttons-container {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            padding: 20px 0;
+            border-top: 1px solid #ccc;
+        }
+
         #selected-count {
             margin-bottom: 10px;
             font-weight: bold;
@@ -81,13 +96,13 @@
         }
 
         #save-product-list, #close-product-list{
-            position: sticky;
-            bottom: 0;
+            padding: 10px 30px;
             border-radius: 5px;
             font-size: 16px;
             background-color: #2898CB;
             color: white;
             border: none;
+            cursor: pointer;
         }
 
         #save-product-list:hover,#close-product-list:hover {
@@ -116,6 +131,7 @@
             color: white;
             background-color: #74AC18;
         }
+
     `);
 
     // Create the popup HTML structure
@@ -210,7 +226,7 @@
             if (dropdownOptions.length > 0) {
                 dropdownOptions[0].click();
             }
-        }, 1000);
+        }, 600);
     }
 
     // Function to process input fields
@@ -234,7 +250,7 @@
         });
 
         if (selectedProducts.length == 0) {
-            alert('0 items');
+            alert('กรุณาระบุจำนวน');
             return;
         }
         popup.style.display = 'None';
@@ -243,17 +259,17 @@
         let selectedProductIndex = 0;
 
         function processNextInput() {
-            /*if (selectedProductIndex >= selectedProducts.length) {
-                popup.style.display = 'none';
+            if (selectedProductIndex >= selectedProducts.length) {
+                alert('ใส่ข้อมูลเสร็จสิ้น');
                 return;
-            }*/
+            }
 
             const selectedProduct = selectedProducts[selectedProductIndex];
 
             // Skip if amount = 0 and extra = 0
             if (selectedProduct.amount === 0 && selectedProduct.extra === 0) {
                 selectedProductIndex++;
-                setTimeout(processNextInput, 1000); // Move to the next product
+                setTimeout(processNextInput, 200); // Move to the next product
                 return;
             }
 
@@ -275,7 +291,7 @@
 
             if (productInput.value.trim() !== "") {
                 inputIndex++;
-                setTimeout(processNextInput, 300);
+                setTimeout(processNextInput, 200);
                 return;
             }
 
@@ -315,7 +331,7 @@
                     selectedProductIndex++;
                     setTimeout(processNextInput, 200); // Move to the next product
                 }
-            }, 1000); // Wait 1 second before processing amount and price
+            }, 700); // Wait 0.7 second before processing amount and price
         }
 
         function processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton) {
@@ -340,7 +356,7 @@
 
                 selectedProductIndex++;
                 setTimeout(processNextInput, 200); // Move to the next product
-            }, 1000); // Wait 1 second before processing the extra row
+            }, 700); // Wait 0.7 second before processing the extra row
         }
 
         function addNewRowForExtra(selectedProduct, addButton) {
@@ -375,10 +391,10 @@
 
                             selectedProductIndex++;
                             setTimeout(processNextInput, 200); // Move to the next product
-                        }, 1000); // Wait 1 second before filling the new row
+                        }, 700); // Wait 0.7 second before filling the new row
                     }
-                }, 1000); // Wait 1 second before processing the new row
-            }, 1000); // Wait 1 second before adding the new row
+                }, 700); // Wait 0.7 second before processing the new row
+            }, 700); // Wait 0.7 second before adding the new row
         }
         processNextInput();
     });
@@ -402,11 +418,13 @@
         // Create a textarea element
         const textArea = document.createElement('textarea');
         textArea.style.width = '100%';
-        textArea.style.height = '80vh';
+        textArea.style.height = '75vh';
         textArea.style.fontSize = '16px'; // Adjusted font size for readability
         textArea.value = productList.join('\n'); // Fill textarea with current list
         txtPopup.appendChild(textArea);
 
+        const buttonContainer = document.createElement('div');
+        buttonContainer.id = 'buttons-container';
         // Create Save button
         const saveButton = document.createElement('button');
         saveButton.id = 'save-product-list';
@@ -423,20 +441,21 @@
             displayProductList(); // Update the displayed list
             popup.style.display = 'block';
         });
-        txtPopup.appendChild(saveButton);
+        buttonContainer.appendChild(saveButton);
 
         // Create Close button
         const closeButton = document.createElement('button');
         closeButton.id = 'close-product-list';
         closeButton.textContent = 'ปิด';
         closeButton.style.marginTop = '10px';
-        closeButton.style.padding = '10px 15px';
+        closeButton.style.padding = '10px 25px';
         closeButton.style.cursor = 'pointer';
         closeButton.addEventListener('click', function() {
             document.body.removeChild(txtPopup); // Close the txtPopup without saving
             popup.style.display = 'block';
         });
-        txtPopup.appendChild(closeButton);
+        buttonContainer.appendChild(closeButton);
+        txtPopup.appendChild(buttonContainer);
 
         // Append the txtPopup to the body
         document.body.appendChild(txtPopup);
@@ -454,26 +473,44 @@
 
             const amountCell = document.createElement('td');
             const amountInput = document.createElement('input');
-            amountInput.style.width = '60px';
             amountInput.type = 'number';
-            amountInput.placeholder = 'Amount';
+            amountInput.placeholder = 'จำนวน';
             amountInput.className = 'amount-input';
             amountInput.min = '0';
             amountInput.value = '0';
             amountInput.setAttribute('data-product', product);
             amountInput.addEventListener('input', updateSelectedCount);
+            amountInput.addEventListener('focus', function () {
+                if(this.value == 0){
+                    this.value = '';
+                }
+            });
+            amountInput.addEventListener('blur', function () {
+                if (this.value.trim() === '') {
+                    this.value = 0;
+                }
+            });
             amountCell.appendChild(amountInput);
 
             const extraCell = document.createElement('td');
             const extraInput = document.createElement('input');
-            extraInput.style.width = '60px';
             extraInput.type = 'number';
-            extraInput.placeholder = 'Extra';
+            extraInput.placeholder = 'แถม';
             extraInput.className = 'extra-input';
             extraInput.min = '0';
             extraInput.value = '0';
             extraInput.setAttribute('data-product', product);
             extraInput.addEventListener('input', updateSelectedCount);
+            extraInput.addEventListener('focus', function () {
+                if(this.value == 0){
+                    this.value = '';
+                }
+            });
+            extraInput.addEventListener('blur', function () {
+                if (this.value.trim() === '') {
+                    this.value = 0;
+                }
+            });
             extraCell.appendChild(extraInput);
 
             row.appendChild(productCell);
@@ -487,72 +524,6 @@
     GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
 
     displayProductList();
-    /*
-    // Fetch product list from Pastebin and populate UI
-    GM_xmlhttpRequest({
-        method: "GET",
-        url: PRODUCT_URL,
-        overrideMimeType: "text/plain; charset=utf-8",
-        onload: function (response) {
-            let contentType = response.responseHeaders.match(/Content-Type:\s*([^\r\n]+)/i);
-            contentType = contentType ? contentType[1] : "";
-
-            if (!contentType.includes("text/plain") && !contentType.includes("text")) {
-                console.error("Unexpected content type:", contentType);
-                alert("Error: The response is not plain text.");
-                return;
-            }
-
-            let rawText = response.responseText;
-            let productList = rawText
-                .replace(/\r\n/g, "\n")
-                .split("\n")
-                .map(item => item.trim())
-                .filter(item => item.length > 0);
-
-            const optionsList = document.getElementById('options-list');
-            optionsList.innerHTML = "";
-
-            productList.forEach(product => {
-                const row = document.createElement('tr');
-
-                const productCell = document.createElement('td');
-                productCell.textContent = product;
-
-                const amountCell = document.createElement('td');
-                const amountInput = document.createElement('input');
-                amountInput.style.width = '60px';
-                amountInput.type = 'number';
-                amountInput.placeholder = 'Amount';
-                amountInput.className = 'amount-input';
-                amountInput.min = '0';
-                amountInput.value = '0';
-                amountInput.setAttribute('data-product', product);
-                amountInput.addEventListener('input', updateSelectedCount);
-                amountCell.appendChild(amountInput);
-
-                const extraCell = document.createElement('td');
-                const extraInput = document.createElement('input');
-                extraInput.style.width = '60px';
-                extraInput.type = 'number';
-                extraInput.placeholder = 'Extra';
-                extraInput.className = 'extra-input';
-                extraInput.min = '0';
-                extraInput.value = '0';
-                extraInput.setAttribute('data-product', product);
-                extraInput.addEventListener('input', updateSelectedCount);
-                extraCell.appendChild(extraInput);
-
-                row.appendChild(productCell);
-                row.appendChild(amountCell);
-                row.appendChild(extraCell);
-                optionsList.appendChild(row);
-            });
-        },
-        onerror: function (error) {
-            console.error('Error fetching product list:', error);
-        }
-    });*/
 
     // Function to update selected count
     function updateSelectedCount() {
