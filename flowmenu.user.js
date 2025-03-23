@@ -17,7 +17,17 @@
 (function () {
     'use strict';
 
-    const PRODUCT_URL = GM_getValue("userURL", "https://pastebin.com/raw/dccXXx1L");
+    const PRODUCT_URL = GM_getValue("userURL", "");
+
+    if (!PRODUCT_URL) {
+        PRODUCT_URL = prompt("Enter your URL (first-time setup):", "https://example.com");
+        if (PRODUCT_URL) {
+            GM_setValue("userURL", PRODUCT_URL);
+            alert("URL saved: " + PRODUCT_URL);
+        } else {
+            alert("No URL entered. Please set it in the Tampermonkey menu.");
+        }
+    }
 
     GM_registerMenuCommand("Set URL", function() {
         let newURL = prompt("Enter your URL:", PRODUCT_URL);
@@ -25,8 +35,6 @@
             GM_setValue("userURL", newURL);
         }
     });
-
-    console.log(PRODUCT_URL)
 
     GM_addStyle(`
         #select-popup {
