@@ -26,6 +26,7 @@
         if (PRODUCT_URL) {
             GM_setValue("userURL", PRODUCT_URL); // Save it permanently
             alert("บันทึก: " + PRODUCT_URL);
+            location.reload();
         } else {
             alert("ไม่ได้ใส่ลิงค์ URL. ตั้งค่าได้ที่ Tampermonkey เมนู Set URL");
         }
@@ -37,6 +38,7 @@
         if (newURL) {
             GM_setValue("userURL", newURL);
             alert("บันทึก: " + newURL);
+            location.reload();
         }
     });
 
