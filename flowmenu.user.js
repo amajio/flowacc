@@ -10,6 +10,8 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @updateURL    https://raw.githubusercontent.com/amajio/flowacc/main/flowmenu.user.js
+// @downloadURL  https://raw.githubusercontent.com/amajio/flowacc/main/flowmenu.user.js
 // ==/UserScript==
 
 (function () {
