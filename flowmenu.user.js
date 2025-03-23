@@ -2,7 +2,7 @@
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
 // @version      1.1
-// @description  Displays a list of products with amount and extra inputs in a table and submits selected products where amount > 0. Buttons and selected count are placed outside the table.
+// @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
 // @grant        GM_addStyle
