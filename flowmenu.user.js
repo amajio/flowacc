@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.31
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -81,7 +81,7 @@
             color: #333;
         }
 
-        #submit-selections, #clear-amount, #close-popup, #product-list {
+        #submit-selections, #clear-amount, #close-popup, #setting-list {
             padding: 10px 30px;
             font-size: 16px;
             cursor: pointer;
@@ -91,7 +91,7 @@
             background-color: #2898CB;
         }
 
-        #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#product-list:hover {
+        #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
             background-color: #2887B6;
         }
 
@@ -139,7 +139,7 @@
         }
 
     `);
-
+    const paths = ["/invoices/", "/billing-notes/", "/quotations/"];
     // Create the popup HTML structure
     const popup = document.createElement('div');
     popup.id = 'select-popup';
@@ -160,7 +160,7 @@
             <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | เลือก: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
             <button id="submit-selections">ยืนยัน</button>
             <button id="clear-amount">ล้างจำนวน</button>
-            <button id="product-list">ตั้งค่า</button>
+            <button id="setting-list">ตั้งค่า</button>
             <button id="close-popup">ปิด</button>
         </div>
     `;
@@ -189,7 +189,7 @@
 
     onUrlChange();
 
-    document.getElementById('product-list').addEventListener('click', () => {
+    document.getElementById('setting-list').addEventListener('click', () => {
         popup.style.display = 'none';
         openTextAreaPopup();
     });
@@ -214,7 +214,6 @@
     });
 
     function onUrlChange() {
-        const paths = ["invoices/new", "billing-notes/new", "quotations/new"];
         openPopupButton.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
     }
 
@@ -476,7 +475,6 @@
             alert('บันทึกรายการสินค้า!');
             document.body.removeChild(txtPopup); // Close the txtPopup after saving
             displayProductList(); // Update the displayed list
-            const paths = ["invoices/new", "billing-notes/new", "quotations/new"];
             popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
         });
         buttonContainer.appendChild(saveButton);
@@ -490,7 +488,6 @@
         closeButton.style.cursor = 'pointer';
         closeButton.addEventListener('click', function() {
             document.body.removeChild(txtPopup); // Close the txtPopup without saving
-            const paths = ["invoices/new", "billing-notes/new", "quotations/new"];
             popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
         });
         buttonContainer.appendChild(closeButton);
