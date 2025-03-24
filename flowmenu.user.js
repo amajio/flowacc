@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.33
+// @version      1.331
 // @description  Displays a list of products in Flow Account
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -55,7 +55,8 @@ GM_addStyle(`
     font-size: 1em;
   }
   #options-table th {
-    background-color: #f2f2f2;
+    background-color: #3CAEDA;
+    color: white;
   }
   .amount-input, .extra-input {
     width: 65px;
@@ -98,6 +99,7 @@ GM_addStyle(`
     border-radius: 5px;
     background-color: #2898CB;
   }
+
   #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
     background-color: #2887B6;
   }
@@ -181,6 +183,11 @@ GM_addStyle(`
   }
   .notification.success {
     background: #3CAEDA;
+  }
+  #missing-product{
+     font-weight: bold;
+     color: red;
+     font-size: 1.1em;
   }
 `);
 
@@ -357,68 +364,80 @@ GM_addStyle(`
         const optionsList = document.getElementById('options-list');
         optionsList.innerHTML = "";
 
-        productList.forEach(product => {
-            if(product.startsWith('//')) return;
+        if(productList.length > 0){
+            productList.forEach(product => {
+                if(product.startsWith('//')) return;
 
+                const row = document.createElement('tr');
+                const productCell = document.createElement('td');
+                productCell.textContent = product;
+
+                const amountCell = document.createElement('td');
+                const amountInput = document.createElement('input');
+                amountInput.type = 'number';
+                amountInput.className = 'amount-input';
+                amountInput.min = '0';
+                amountInput.value = '0';
+                amountInput.setAttribute('data-product', product);
+
+                amountInput.addEventListener('input', function() {
+                    updateSelectedCount();
+                    updateRowColors(); // Immediate update
+                });
+
+                amountInput.addEventListener('focus', function() {
+                    if(this.value == 0) this.value = '';
+                });
+
+                amountInput.addEventListener('blur', function() {
+                    if (this.value.trim() === '') this.value = 0;
+                    updateRowColors(); // Update on blur too
+                });
+
+                amountCell.appendChild(amountInput);
+
+                const extraCell = document.createElement('td');
+                const extraInput = document.createElement('input');
+                extraInput.type = 'number';
+                extraInput.className = 'extra-input';
+                extraInput.min = '0';
+                extraInput.value = '0';
+                extraInput.setAttribute('data-product', product);
+
+                extraInput.addEventListener('input', function() {
+                    updateSelectedCount();
+                    updateRowColors(); // Immediate update
+                });
+
+                extraInput.addEventListener('focus', function() {
+                    if(this.value == 0) this.value = '';
+                });
+
+                extraInput.addEventListener('blur', function() {
+                    if (this.value.trim() === '') this.value = 0;
+                    updateRowColors(); // Update on blur too
+                });
+
+                extraCell.appendChild(extraInput);
+
+                row.appendChild(productCell);
+                row.appendChild(amountCell);
+                row.appendChild(extraCell);
+                optionsList.appendChild(row);
+            });
+            updateSelectedCount();
+        }else{
             const row = document.createElement('tr');
             const productCell = document.createElement('td');
-            productCell.textContent = product;
-
-            const amountCell = document.createElement('td');
-            const amountInput = document.createElement('input');
-            amountInput.type = 'number';
-            amountInput.className = 'amount-input';
-            amountInput.min = '0';
-            amountInput.value = '0';
-            amountInput.setAttribute('data-product', product);
-
-            amountInput.addEventListener('input', function() {
-                updateSelectedCount();
-                updateRowColors(); // Immediate update
-            });
-
-            amountInput.addEventListener('focus', function() {
-                if(this.value == 0) this.value = '';
-            });
-
-            amountInput.addEventListener('blur', function() {
-                if (this.value.trim() === '') this.value = 0;
-                updateRowColors(); // Update on blur too
-            });
-
-            amountCell.appendChild(amountInput);
-
-            const extraCell = document.createElement('td');
-            const extraInput = document.createElement('input');
-            extraInput.type = 'number';
-            extraInput.className = 'extra-input';
-            extraInput.min = '0';
-            extraInput.value = '0';
-            extraInput.setAttribute('data-product', product);
-
-            extraInput.addEventListener('input', function() {
-                updateSelectedCount();
-                updateRowColors(); // Immediate update
-            });
-
-            extraInput.addEventListener('focus', function() {
-                if(this.value == 0) this.value = '';
-            });
-
-            extraInput.addEventListener('blur', function() {
-                if (this.value.trim() === '') this.value = 0;
-                updateRowColors(); // Update on blur too
-            });
-
-            extraCell.appendChild(extraInput);
-
+            productCell.id = 'missing-product';
+            productCell.setAttribute('colspan','3');
+            productCell.style.textAlign = 'center';
+            productCell.style.whiteSpace = "pre-line";
+            productCell.textContent = "ไม่พบรายการสินค้า\nกดปุ่ม ตั้งค่า เพื่อเพิ่มรายการสินค้า";
             row.appendChild(productCell);
-            row.appendChild(amountCell);
-            row.appendChild(extraCell);
             optionsList.appendChild(row);
-        });
-
-        updateSelectedCount();
+            updateSelectedCount();
+        }
     }
 
     function updateSelectedCount() {
@@ -460,7 +479,7 @@ GM_addStyle(`
             background: white;
             padding: 20px;
             border: 1px solid #ccc;
-            z-index: 9999;
+            z-index: 99999;
             width: 700px;
             height: 800px;
             overflow: auto;
