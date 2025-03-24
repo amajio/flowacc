@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.31
+// @version      1.32
 // @description  Displays a list of products in Flow Account
 // @author       You
 // @match        *.flowaccount.com/*/business/*
@@ -558,6 +558,35 @@
         });
         updateSelectedCount();
     }
+
+    document.addEventListener('keydown', function(event) {
+        let inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
+
+        let currentIndex = inputs.indexOf(document.activeElement);
+        if (currentIndex === -1) return;
+
+        let columnCount = 2; // มี 2 คอลัมน์
+        let rowCount = inputs.length / columnCount; // คำนวณจำนวนแถว
+
+        if (event.key === 'ArrowRight' && (currentIndex + 1) % columnCount !== 0) {
+            inputs[currentIndex + 1]?.focus();
+            event.preventDefault();
+        } else if (event.key === 'ArrowLeft' && currentIndex % columnCount !== 0) {
+            inputs[currentIndex - 1]?.focus();
+            event.preventDefault();
+        } else if (event.key === 'ArrowDown' && currentIndex + columnCount < inputs.length) {
+            inputs[currentIndex + columnCount]?.focus();
+            event.preventDefault();
+        } else if (event.key === 'ArrowUp' && currentIndex - columnCount >= 0) {
+            inputs[currentIndex - columnCount]?.focus();
+            event.preventDefault();
+        }
+
+        // ป้องกันไม่ให้ input[type="number"] เปลี่ยนค่าเมื่อกด ArrowUp หรือ ArrowDown
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault();
+        }
+    });
     // Function to update selected count
     function updateSelectedCount() {
         const amountInputs = document.querySelectorAll('.amount-input');
@@ -591,6 +620,8 @@
         document.getElementById('selected-count').innerText = `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
         updateRowColors();
     }
+
+
 
     let productList = GM_getValue('productList', []);
     GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
