@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.32
+// @version      1.33
 // @description  Displays a list of products in Flow Account
-// @author       You
+// @author       AI code
 // @match        *.flowaccount.com/*/business/*
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
@@ -14,136 +14,182 @@
 // @downloadURL  https://raw.githubusercontent.com/amajio/flowacc/main/flowmenu.user.js
 // ==/UserScript==
 
+'use strict';
+
+// Constants
+const PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
+const TIMEOUTS = {
+  DROPDOWN: 600,
+  ROW_PROCESSING: 700,
+  NEXT_ITEM: 200
+};
+
+// Styles
+GM_addStyle(`
+  html {
+    font-size: 100%;
+  }
+  #select-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border: 2px solid #ccc;
+    z-index: 9999;
+    display: none;
+    width: 700px;
+    height: 800px;
+    overflow-y: auto;
+  }
+  #options-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+  }
+  #options-table th, #options-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+    font-size: 1em;
+  }
+  #options-table th {
+    background-color: #f2f2f2;
+  }
+  .amount-input, .extra-input {
+    width: 65px;
+    padding: 5px;
+    box-sizing: border-box;
+    border-radius: 5px;
+    border: 1px solid #808080;
+  }
+  .amount-input:focus, .extra-input:focus {
+    border: 1px solid #2898CB;
+    box-shadow: 0 0 2px #2898CB;
+  }
+  #controls-container {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    padding: 10px 0;
+    border-top: 1px solid #ccc;
+  }
+  #buttons-container {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    padding: 20px 0;
+    border-top: 1px solid #ccc;
+  }
+  #selected-count {
+    margin-bottom: 10px;
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #333;
+  }
+  #submit-selections, #clear-amount, #close-popup, #setting-list {
+    padding: 10px 30px;
+    margin-right: 2px;
+    font-size: 1em;
+    cursor: pointer;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    background-color: #2898CB;
+  }
+  #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
+    background-color: #2887B6;
+  }
+  #save-product-list, #close-product-list{
+    padding: 10px 30px;
+    border-radius: 5px;
+    font-size: 1em;
+    background-color: #2898CB;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  #save-product-list:hover,#close-product-list:hover {
+    background-color: #2887B6;
+  }
+  #close-popup {
+    position: absolute;
+    right: 0px;
+  }
+  #setting-list{
+    position: absolute;
+    right: 85px;
+  }
+  #openPopupButton {
+    z-index: 99999;
+    top: 19px;
+    right: 410px;
+    position: fixed;
+    padding: 10px 30px;
+    font-size: 1em;
+    cursor: pointer;
+    background-color: #88C426;
+    color: white;
+    border: none;
+  }
+  #openPopupButton:hover {
+    color: white;
+    background-color: #74AC18;
+  }
+  .center{
+    height: 30px;
+    text-align: center;
+    font-size: 1.5em;
+    font-weight: bold;
+  }
+  .highlight-row {
+    background-color: #3CAEDA !important;
+  }
+  .highlight-product {
+    font-weight: bold !important;
+  }
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.7);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5em;
+    color: #2898CB;
+  }
+  .notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    padding: 10px;
+    background: #33b5e5;
+    color: white;
+    border-radius: 4px;
+    z-index: 99999;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  }
+  .notification.error {
+    left: 50%;
+    top: 50%;
+    background: #ff4444;
+  }
+  .notification.success {
+    background: #3CAEDA;
+  }
+`);
+
+// Main function
 (function () {
-    'use strict';
+    let productList = GM_getValue('productList', []);
+    let lastUrl = location.href;
 
-    GM_addStyle(`
-        html {
-            font-size: 100%;
-        }
-        #select-popup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border: 2px solid #ccc;
-            z-index: 9999;
-            display: none;
-            width: 700px;
-            height: 800px;
-            overflow-y: auto;
-        }
-        #options-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 10px;
-        }
-        #options-table th, #options-table td {
-            padding: 8px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-            font-size: 1em;
-        }
-        #options-table th {
-            background-color: #f2f2f2;
-        }
-        .amount-input, .extra-input {
-            width: 65px;
-            padding: 5px;
-            box-sizing: border-box;
-            border-radius: 5px;
-            border: 1px solid #808080;
-        }
-        .amount-input:focus, .extra-input:focus {
-            border: 1px solid #2898CB;
-            box-shadow: 0 0 2px #2898CB;
-        }
-
-        #controls-container {
-            position: sticky;
-            bottom: 0;
-            background: white;
-            padding: 10px 0;
-            border-top: 1px solid #ccc;
-        }
-
-        #buttons-container {
-            position: sticky;
-            bottom: 0;
-            background: white;
-            padding: 20px 0;
-            border-top: 1px solid #ccc;
-        }
-
-        #selected-count {
-            margin-bottom: 10px;
-            font-weight: bold;
-            font-size: 0.9em;
-            color: #333;
-        }
-
-        #submit-selections, #clear-amount, #close-popup, #setting-list {
-            padding: 10px 30px;
-            font-size: 1em;
-            cursor: pointer;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            background-color: #2898CB;
-        }
-
-        #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
-            background-color: #2887B6;
-        }
-
-        #save-product-list, #close-product-list{
-            padding: 10px 30px;
-            border-radius: 5px;
-            font-size: 1em;
-            background-color: #2898CB;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        #save-product-list:hover,#close-product-list:hover {
-            background-color: #2887B6;
-        }
-
-        #close-popup {
-            position: absolute;
-            right: 0px;
-        }
-
-        #openPopupButton {
-            z-index: 99999;
-            top: 19px;
-            right: 410px;
-            position: fixed;
-            padding: 10px 30px;
-            font-size: 1em;
-            cursor: pointer;
-            background-color: #88C426;
-            color: white;
-            border: none;
-        }
-
-        #openPopupButton:hover {
-            color: white;
-            background-color: #74AC18;
-        }
-        .center{
-            height: 30px;
-            text-align: center;
-            font-size: 1.5em;
-            font-weight: bold;
-        }
-
-    `);
-    const paths = ["/invoices/", "/billing-notes/", "/quotations/"];
-    // Create the popup HTML structure
+    // Create the popup
     const popup = document.createElement('div');
     popup.id = 'select-popup';
     popup.style.height = '80vh';
@@ -167,30 +213,29 @@
             <button id="close-popup">ปิด</button>
         </div>
     `;
-
-    let lastUrl = location.href;
-    const observer = new MutationObserver(() => {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
-            onUrlChange();
-        }
-    });
-
-    observer.observe(document, { subtree: true, childList: true });
-
     document.body.appendChild(popup);
+
+    // Create open button
     const openPopupButton = document.createElement('button');
     openPopupButton.id = 'openPopupButton';
     openPopupButton.innerText = 'รายการสินค้า';
     openPopupButton.style.borderRadius = '5px';
     document.body.appendChild(openPopupButton);
 
+    // URL change observer
+    const observer = new MutationObserver(() => {
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            onUrlChange();
+        }
+    });
+    observer.observe(document, { subtree: true, childList: true });
+
+    // Event listeners
     openPopupButton.addEventListener('click', () => {
         popup.style.display = 'block';
         updateSelectedCount();
     });
-
-    onUrlChange();
 
     document.getElementById('setting-list').addEventListener('click', () => {
         popup.style.display = 'none';
@@ -202,374 +247,29 @@
     });
 
     document.getElementById('clear-amount').addEventListener('click', () => {
-        // Clear all amount and extra input fields
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
-        amountInputs.forEach(function(input) {input.value = 0;});
-        extraInputs.forEach(function(input) {input.value = 0;});
+        amountInputs.forEach(input => { input.value = 0; });
+        extraInputs.forEach(input => { input.value = 0; });
         updateSelectedCount();
+        updateRowColors(); // Explicitly update colors after clear
     });
 
     document.body.addEventListener("input", function(event) {
         if (event.target.matches(".amount-input, .extra-input")) {
-            updateRowColors();
+            updateSelectedCount();
+            updateRowColors(); // Update colors immediately on input
         }
     });
 
-    function onUrlChange() {
-        openPopupButton.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
-    }
-
-    // Function to simulate typing in an input field
-    function simulateTyping(inputElement, value) {
-        const event = new Event('input', { 'bubbles': true, 'cancelable': true });
-        inputElement.value = value;
-        inputElement.dispatchEvent(event);
-        inputElement.blur();
-    }
-
-    // Function to simulate clicking an input field
-    function simulateClick(inputElement) {
-        const clickEvent = new MouseEvent('click', { 'bubbles': true, 'cancelable': true });
-        inputElement.dispatchEvent(clickEvent);
-    }
-
-    // Function to select the first dropdown option
-    function selectFirstDropdownOption(inputElement) {
-        simulateClick(inputElement);
-        setTimeout(() => {
-            const dropdownOptions = inputElement.closest('typeahead-custom').querySelectorAll('.tt-suggestion');
-            if (dropdownOptions.length > 0) {
-                dropdownOptions[0].click();
-            }
-        }, 600);
-    }
-
-    // Function to process input fields
-    document.getElementById('submit-selections').addEventListener('click', () => {
-        const selectedProducts = [];
-        const amountInputs = document.querySelectorAll('.amount-input');
-        const extraInputs = document.querySelectorAll('.extra-input');
-
-        amountInputs.forEach((amountInput, index) => {
-            const productName = amountInput.getAttribute('data-product');
-            const amountValue = parseInt(amountInput.value, 10) || 0;
-            const extraValue = parseInt(extraInputs[index].value, 10) || 0;
-
-            if (amountValue > 0 || extraValue > 0) {
-                selectedProducts.push({
-                    product: productName,
-                    amount: amountValue,
-                    extra: extraValue
-                });
-            }
-        });
-
-        if (selectedProducts.length == 0) {
-            alert('กรุณาระบุจำนวน');
-            return;
-        }
-        popup.style.display = 'None';
-
-        let inputIndex = 1;
-        let selectedProductIndex = 0;
-
-        function processNextInput() {
-            if (selectedProductIndex >= selectedProducts.length) {
-                alert('ใส่ข้อมูลเสร็จสิ้น');
-                return;
-            }
-
-            const selectedProduct = selectedProducts[selectedProductIndex];
-
-            // Skip if amount = 0 and extra = 0
-            if (selectedProduct.amount === 0 && selectedProduct.extra === 0) {
-                selectedProductIndex++;
-                setTimeout(processNextInput, 200); // Move to the next product
-                return;
-            }
-
-            const rowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
-            const inputXPath = `${rowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`;
-            const amountXPath = `${rowXPath}/td[4]/input`;
-            const priceXPath = `${rowXPath}/td[6]/input`;
-            const addButtonXPath = `//*[@id="paper-content"]/section[2]/div/div/section[1]/button`;
-
-            const productInput = document.evaluate(inputXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            const amountInput = document.evaluate(amountXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            const priceInput = document.evaluate(priceXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            const addButton = document.evaluate(addButtonXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-            if (!productInput) {
-                handleMissingProductInput(addButton);
-                return;
-            }
-
-            if (productInput.value.trim() !== "") {
-                inputIndex++;
-                setTimeout(processNextInput, 200);
-                return;
-            }
-
-            // Process main row if amount > 0
-            if (selectedProduct.amount > 0) {
-                processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton);
-            } else if (selectedProduct.extra > 0) {
-                processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton);
-            }
-        }
-
-        function handleMissingProductInput(addButton) {
-            if (addButton) {
-                addButton.click();
-                setTimeout(processNextInput, 200); // Wait 1 sec before retrying
-            } else {
-                console.log("Add button not found!");
-            }
-        }
-
-        function processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton) {
-            simulateTyping(productInput, selectedProduct.product);
-            selectFirstDropdownOption(productInput);
-
-            setTimeout(() => {
-                if (amountInput) {
-                    simulateTyping(amountInput, selectedProduct.amount);
-                    amountInput.focus();
-                    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                    amountInput.dispatchEvent(changeEvent);
-                }
-
-                // If extra > 0, add a new row for the extra amount
-                if (selectedProduct.extra > 0) {
-                    addNewRowForExtra(selectedProduct, addButton);
-                } else {
-                    selectedProductIndex++;
-                    setTimeout(processNextInput, 200); // Move to the next product
-                }
-            }, 700); // Wait 0.7 second before processing amount and price
-        }
-
-        function processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton) {
-            simulateTyping(productInput, selectedProduct.product);
-            selectFirstDropdownOption(productInput);
-
-            setTimeout(() => {
-                if (amountInput) {
-                    simulateTyping(amountInput, selectedProduct.extra);
-                    amountInput.focus();
-                    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                    amountInput.dispatchEvent(changeEvent);
-                }
-
-                // Set price to 0 for the extra row
-                if (priceInput) {
-                    simulateTyping(priceInput, 0);
-                    priceInput.focus();
-                    const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
-                    priceInput.dispatchEvent(priceChangeEvent);
-                }
-
-                selectedProductIndex++;
-                setTimeout(processNextInput, 200); // Move to the next product
-            }, 700); // Wait 0.7 second before processing the extra row
-        }
-
-        function addNewRowForExtra(selectedProduct, addButton) {
-            setTimeout(() => {
-                if (addButton) {
-                    addButton.click();
-                }
-
-                inputIndex++;
-
-                // Process the new row for the extra amount
-                setTimeout(() => {
-                    const newRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
-                    const newProductInput = document.evaluate(`${newRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    const newAmountInput = document.evaluate(`${newRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                    const newPriceInput = document.evaluate(`${newRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-                    if (newProductInput && newAmountInput && newPriceInput) {
-                        simulateTyping(newProductInput, selectedProduct.product);
-                        selectFirstDropdownOption(newProductInput);
-
-                        setTimeout(() => {
-                            simulateTyping(newAmountInput, selectedProduct.extra);
-                            newAmountInput.focus();
-                            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                            newAmountInput.dispatchEvent(changeEvent);
-
-                            simulateTyping(newPriceInput, 0);
-                            newPriceInput.focus();
-                            const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
-                            newPriceInput.dispatchEvent(priceChangeEvent);
-
-                            selectedProductIndex++;
-                            setTimeout(processNextInput, 200); // Move to the next product
-                        }, 700); // Wait 0.7 second before filling the new row
-                    }
-                }, 700); // Wait 0.7 second before processing the new row
-            }, 700); // Wait 0.7 second before adding the new row
-        }
-        processNextInput();
-    });
-
-    function updateRowColors() {
-        let table = document.querySelector("#options-table"); // Target the table
-        if (!table) return; // Exit if table is not found
-
-        table.querySelectorAll("tbody tr").forEach(row => {
-            let amountInput = row.querySelector(".amount-input"); // Get amount input
-            let extraInput = row.querySelector(".extra-input"); // Get extra input
-            let productCell = row.querySelector("td:first-child");
-
-
-            let amount = amountInput ? parseInt(amountInput.value) || 0 : 0;
-            let extra = extraInput ? parseInt(extraInput.value) || 0 : 0;
-
-            // If either amount or extra is greater than 0, change color
-            if (amount > 0 || extra > 0) {
-                row.style.backgroundColor = "#3CAEDA"; // Highlight row
-                if (productCell) productCell.style.fontWeight = "bold"
-            } else {
-                row.style.backgroundColor = ""; // Reset to default
-                if (productCell) productCell.style.fontWeight = ""
-            }
-        });
-    }
-
-    function openTextAreaPopup() {
-        const txtPopup = document.createElement('div');
-        txtPopup.style.position = 'fixed';
-        txtPopup.style.height = '90vh';
-        txtPopup.style.width = '700px';
-        txtPopup.style.top = '50%';
-        txtPopup.style.left = '50%';
-        txtPopup.style.transform = 'translate(-50%, -50%)';
-        txtPopup.style.backgroundColor = '#fff';
-        txtPopup.style.padding = '20px';
-        txtPopup.style.border = '1px solid #ccc';
-        txtPopup.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
-        txtPopup.style.zIndex = '9999';
-        txtPopup.style.overflow = 'auto';
-
-        // Create a textarea element
-        const textArea = document.createElement('textarea');
-        textArea.style.width = '100%';
-        textArea.style.height = '75vh';
-        textArea.style.fontSize = '16px'; // Adjusted font size for readability
-        textArea.value = productList.join('\n'); // Fill textarea with current list
-        txtPopup.appendChild(textArea);
-
-        const buttonContainer = document.createElement('div');
-        buttonContainer.id = 'buttons-container';
-        // Create Save button
-        const saveButton = document.createElement('button');
-        saveButton.id = 'save-product-list';
-        saveButton.textContent = 'บันทึกรายการ';
-        saveButton.style.marginRight = '10px';
-        saveButton.style.marginTop = '10px';
-        saveButton.style.padding = '10px 15px';
-        saveButton.style.cursor = 'pointer';
-        saveButton.addEventListener('click', function() {
-            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0 );
-            GM_setValue('productList', productList); // Save the list
-            alert('บันทึกรายการสินค้า!');
-            document.body.removeChild(txtPopup); // Close the txtPopup after saving
-            displayProductList(); // Update the displayed list
-            popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
-        });
-        buttonContainer.appendChild(saveButton);
-
-        // Create Close button
-        const closeButton = document.createElement('button');
-        closeButton.id = 'close-product-list';
-        closeButton.textContent = 'ปิด';
-        closeButton.style.marginTop = '10px';
-        closeButton.style.padding = '10px 25px';
-        closeButton.style.cursor = 'pointer';
-        closeButton.addEventListener('click', function() {
-            document.body.removeChild(txtPopup); // Close the txtPopup without saving
-            popup.style.display = paths.some(path => location.href.includes(path)) ? 'block' : 'none';
-        });
-        buttonContainer.appendChild(closeButton);
-        txtPopup.appendChild(buttonContainer);
-
-        // Append the txtPopup to the body
-        document.body.appendChild(txtPopup);
-    }
-
-    function displayProductList() {
-        const optionsList = document.getElementById('options-list');
-        optionsList.innerHTML = ""; // Clear existing rows
-
-        productList.forEach(product => {
-            if(product.startsWith('//')){
-                return;
-            }
-            const row = document.createElement('tr');
-            const productCell = document.createElement('td');
-            productCell.textContent = product;
-
-            const amountCell = document.createElement('td');
-            const amountInput = document.createElement('input');
-            amountInput.type = 'number';
-            amountInput.placeholder = 'จำนวน';
-            amountInput.className = 'amount-input';
-            amountInput.min = '0';
-            amountInput.value = '0';
-            amountInput.setAttribute('data-product', product);
-            amountInput.addEventListener('input', updateSelectedCount);
-            amountInput.addEventListener('focus', function () {
-                if(this.value == 0){
-                    this.value = '';
-                }
-            });
-            amountInput.addEventListener('blur', function () {
-                if (this.value.trim() === '') {
-                    this.value = 0;
-                }
-            });
-            amountCell.appendChild(amountInput);
-
-            const extraCell = document.createElement('td');
-            const extraInput = document.createElement('input');
-            extraInput.type = 'number';
-            extraInput.placeholder = 'แถม';
-            extraInput.className = 'extra-input';
-            extraInput.min = '0';
-            extraInput.value = '0';
-            extraInput.setAttribute('data-product', product);
-            extraInput.addEventListener('input', updateSelectedCount);
-            extraInput.addEventListener('focus', function () {
-                if(this.value == 0){
-                    this.value = '';
-                }
-            });
-            extraInput.addEventListener('blur', function () {
-                if (this.value.trim() === '') {
-                    this.value = 0;
-                }
-            });
-            extraCell.appendChild(extraInput);
-
-            row.appendChild(productCell);
-            row.appendChild(amountCell);
-            row.appendChild(extraCell);
-            optionsList.appendChild(row);
-        });
-        updateSelectedCount();
-    }
-
+    // Keyboard navigation
     document.addEventListener('keydown', function(event) {
         let inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
-
         let currentIndex = inputs.indexOf(document.activeElement);
         if (currentIndex === -1) return;
 
-        let columnCount = 2; // มี 2 คอลัมน์
-        let rowCount = inputs.length / columnCount; // คำนวณจำนวนแถว
+        let columnCount = 2;
+        let rowCount = inputs.length / columnCount;
 
         if (event.key === 'ArrowRight' && (currentIndex + 1) % columnCount !== 0) {
             inputs[currentIndex + 1]?.focus();
@@ -585,32 +285,159 @@
             event.preventDefault();
         }
 
-        // ป้องกันไม่ให้ input[type="number"] เปลี่ยนค่าเมื่อกด ArrowUp หรือ ArrowDown
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
             event.preventDefault();
         }
     });
-    // Function to update selected count
+
+    // Functions
+    function onUrlChange() {
+        //openPopupButton.style.display = PATHS.some(path => location.href.includes(path)) ? 'block' : 'none';
+
+        if(PATHS.some(path => location.href.includes(path))){
+            openPopupButton.style.display = 'block';
+            const amountInputs = document.querySelectorAll('.amount-input');
+            const extraInputs = document.querySelectorAll('.extra-input');
+            amountInputs.forEach(input => { input.value = 0; });
+            extraInputs.forEach(input => { input.value = 0; });
+            updateSelectedCount();
+            updateRowColors(); // Explicitly update colors after clear
+        }else{
+            openPopupButton.style.display = 'none';
+        }
+    }
+
+    function showLoading(show) {
+        let loader = document.getElementById('loading-overlay');
+        if (show) {
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.id = 'loading-overlay';
+                loader.className = 'loading-overlay';
+                loader.textContent = 'กำลังใส่ข้อมูล...';
+                document.body.appendChild(loader);
+            }
+        } else if (loader) {
+            document.body.removeChild(loader);
+        }
+    }
+
+    function showNotification(message, type = 'info', delay = 3000) {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => document.body.removeChild(notification), 300);
+        }, delay);
+    }
+
+    function updateRowColors() {
+        const rows = document.querySelectorAll("#options-table tbody tr");
+        rows.forEach(row => {
+            const amountInput = row.querySelector(".amount-input");
+            const extraInput = row.querySelector(".extra-input");
+            const productCell = row.querySelector("td:first-child");
+            const amount = amountInput ? parseInt(amountInput.value) || 0 : 0;
+            const extra = extraInput ? parseInt(extraInput.value) || 0 : 0;
+
+            if (amount > 0 || extra > 0) {
+                row.classList.add('highlight-row');
+                if (productCell) productCell.classList.add('highlight-product');
+            } else {
+                row.classList.remove('highlight-row');
+                if (productCell) productCell.classList.remove('highlight-product');
+            }
+        });
+    }
+
+    function displayProductList() {
+        const optionsList = document.getElementById('options-list');
+        optionsList.innerHTML = "";
+
+        productList.forEach(product => {
+            if(product.startsWith('//')) return;
+
+            const row = document.createElement('tr');
+            const productCell = document.createElement('td');
+            productCell.textContent = product;
+
+            const amountCell = document.createElement('td');
+            const amountInput = document.createElement('input');
+            amountInput.type = 'number';
+            amountInput.className = 'amount-input';
+            amountInput.min = '0';
+            amountInput.value = '0';
+            amountInput.setAttribute('data-product', product);
+
+            amountInput.addEventListener('input', function() {
+                updateSelectedCount();
+                updateRowColors(); // Immediate update
+            });
+
+            amountInput.addEventListener('focus', function() {
+                if(this.value == 0) this.value = '';
+            });
+
+            amountInput.addEventListener('blur', function() {
+                if (this.value.trim() === '') this.value = 0;
+                updateRowColors(); // Update on blur too
+            });
+
+            amountCell.appendChild(amountInput);
+
+            const extraCell = document.createElement('td');
+            const extraInput = document.createElement('input');
+            extraInput.type = 'number';
+            extraInput.className = 'extra-input';
+            extraInput.min = '0';
+            extraInput.value = '0';
+            extraInput.setAttribute('data-product', product);
+
+            extraInput.addEventListener('input', function() {
+                updateSelectedCount();
+                updateRowColors(); // Immediate update
+            });
+
+            extraInput.addEventListener('focus', function() {
+                if(this.value == 0) this.value = '';
+            });
+
+            extraInput.addEventListener('blur', function() {
+                if (this.value.trim() === '') this.value = 0;
+                updateRowColors(); // Update on blur too
+            });
+
+            extraCell.appendChild(extraInput);
+
+            row.appendChild(productCell);
+            row.appendChild(amountCell);
+            row.appendChild(extraCell);
+            optionsList.appendChild(row);
+        });
+
+        updateSelectedCount();
+    }
+
     function updateSelectedCount() {
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
-
-        let selectedCount = 0; // Number of selected items (amount > 0 or extra > 0)
-        let rowCount = 0; // Number of rows used (main + extra rows)
-        let totalItems = 0; // Total of amount + extra for all selected items
+        let selectedCount = 0;
+        let rowCount = 0;
+        let totalItems = 0;
         let allItems = 0;
         let extraCount = 0;
+
         amountInputs.forEach((amountInput, index) => {
             const amountValue = parseInt(amountInput.value, 10) || 0;
             const extraValue = parseInt(extraInputs[index].value, 10) || 0;
             allItems++;
-            if (amountValue > 0 || extraValue > 0) {
-                selectedCount++; // Count selected items
-                totalItems += amountValue + extraValue; // Add to total
 
-                // Count rows:
-                // - 1 row for amount > 0
-                // - 1 additional row for extra > 0
+            if (amountValue > 0 || extraValue > 0) {
+                selectedCount++;
+                totalItems += amountValue + extraValue;
                 if (amountValue > 0) rowCount++;
                 if (extraValue > 0) {
                     rowCount++;
@@ -619,15 +446,279 @@
             }
         });
 
-        // Update the display
-        document.getElementById('selected-count').innerText = `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
-        updateRowColors();
+        document.getElementById('selected-count').innerText =
+            `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
     }
 
+    function openTextAreaPopup() {
+        const txtPopup = document.createElement('div');
+        txtPopup.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            z-index: 9999;
+            width: 700px;
+            height: 800px;
+            overflow: auto;
+        `;
 
+        const textArea = document.createElement('textarea');
+        textArea.style.cssText = `
+            width: 100%;
+            height: 85%;
+            font-size: 16px;
+        `;
+        textArea.value = productList.join('\n');
+        txtPopup.appendChild(textArea);
 
-    let productList = GM_getValue('productList', []);
-    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = `
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+            gap: 10px;
+        `;
 
+        const saveButton = document.createElement('button');
+        saveButton.id = 'save-product-list';
+        saveButton.textContent = 'บันทึกรายการ';
+        saveButton.addEventListener('click', function() {
+            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
+            GM_setValue('productList', productList);
+            showNotification('บันทึกรายการสินค้าเรียบร้อยแล้ว', 'success');
+            document.body.removeChild(txtPopup);
+            displayProductList();
+            popup.style.display = 'block';
+        });
+
+        const closeButton = document.createElement('button');
+        closeButton.id = 'close-product-list';
+        closeButton.textContent = 'ปิด';
+        closeButton.addEventListener('click', function() {
+            document.body.removeChild(txtPopup);
+            popup.style.display = 'block';
+        });
+
+        buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(closeButton);
+        txtPopup.appendChild(buttonContainer);
+        document.body.appendChild(txtPopup);
+    }
+
+    // Initialize
     displayProductList();
+    onUrlChange();
+    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
+        // Simulate typing function
+    function simulateTyping(inputElement, value) {
+        const event = new Event('input', { 'bubbles': true, 'cancelable': true });
+        inputElement.value = value;
+        inputElement.dispatchEvent(event);
+        inputElement.blur();
+    }
+
+    // Simulate clicking function
+    function simulateClick(inputElement) {
+        const clickEvent = new MouseEvent('click', { 'bubbles': true, 'cancelable': true });
+        inputElement.dispatchEvent(clickEvent);
+    }
+
+    // Select first dropdown option
+    function selectFirstDropdownOption(inputElement) {
+        simulateClick(inputElement);
+        setTimeout(() => {
+            const dropdownOptions = inputElement.closest('typeahead-custom').querySelectorAll('.tt-suggestion');
+            if (dropdownOptions.length > 0) {
+                dropdownOptions[0].click();
+            }
+        }, 600);
+    }
+
+    // Process selected products
+    document.getElementById('submit-selections').addEventListener('click', () => {
+        try {
+            const selectedProducts = [];
+            const amountInputs = document.querySelectorAll('.amount-input');
+            const extraInputs = document.querySelectorAll('.extra-input');
+
+            amountInputs.forEach((amountInput, index) => {
+                const productName = amountInput.getAttribute('data-product');
+                const amountValue = parseInt(amountInput.value, 10) || 0;
+                const extraValue = parseInt(extraInputs[index].value, 10) || 0;
+
+                if (amountValue > 0 || extraValue > 0) {
+                    selectedProducts.push({
+                        product: productName,
+                        amount: amountValue,
+                        extra: extraValue
+                    });
+                }
+            });
+
+            if (selectedProducts.length == 0) {
+                showNotification('กรุณาระบุจำนวน', 'error', 1000);
+                return;
+            }
+            showLoading(true);
+
+            popup.style.display = 'None';
+            let inputIndex = 1;
+            let selectedProductIndex = 0;
+
+            function processNextInput() {
+                if (selectedProductIndex >= selectedProducts.length) {
+                    showLoading(false);
+                    showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
+                    return;
+                }
+
+                const selectedProduct = selectedProducts[selectedProductIndex];
+
+                // Skip if amount = 0 and extra = 0
+                if (selectedProduct.amount === 0 && selectedProduct.extra === 0) {
+                    selectedProductIndex++;
+                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                    return;
+                }
+
+                const rowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
+                const inputXPath = `${rowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`;
+                const amountXPath = `${rowXPath}/td[4]/input`;
+                const priceXPath = `${rowXPath}/td[6]/input`;
+                const addButtonXPath = `//*[@id="paper-content"]/section[2]/div/div/section[1]/button`;
+
+                const productInput = document.evaluate(inputXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                const amountInput = document.evaluate(amountXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                const priceInput = document.evaluate(priceXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                const addButton = document.evaluate(addButtonXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                if (!productInput) {
+                    handleMissingProductInput(addButton);
+                    return;
+                }
+
+                if (productInput.value.trim() !== "") {
+                    inputIndex++;
+                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                    return;
+                }
+
+                // Process main row if amount > 0
+                if (selectedProduct.amount > 0) {
+                    processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton);
+                } else if (selectedProduct.extra > 0) {
+                    processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton);
+                }
+            }
+
+            function handleMissingProductInput(addButton) {
+                if (addButton) {
+                    addButton.click();
+                    setTimeout(processNextInput, TIMEOUTS.ROW_PROCESSING);
+                } else {
+                    showLoading(false);
+                    showNotification("ไม่พบปุ่มเพิ่มรายการ!", 'error');
+                }
+            }
+
+            function processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton) {
+                simulateTyping(productInput, selectedProduct.product);
+                selectFirstDropdownOption(productInput);
+
+                setTimeout(() => {
+                    if (amountInput) {
+                        simulateTyping(amountInput, selectedProduct.amount);
+                        amountInput.focus();
+                        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                        amountInput.dispatchEvent(changeEvent);
+                    }
+
+                    // If extra > 0, add a new row for the extra amount
+                    if (selectedProduct.extra > 0) {
+                        addNewRowForExtra(selectedProduct, addButton);
+                    } else {
+                        selectedProductIndex++;
+                        setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                    }
+                }, TIMEOUTS.ROW_PROCESSING);
+            }
+
+            function processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton) {
+                simulateTyping(productInput, selectedProduct.product);
+                selectFirstDropdownOption(productInput);
+
+                setTimeout(() => {
+                    if (amountInput) {
+                        simulateTyping(amountInput, selectedProduct.extra);
+                        amountInput.focus();
+                        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                        amountInput.dispatchEvent(changeEvent);
+                    }
+
+                    // Set price to 0 for the extra row
+                    if (priceInput) {
+                        simulateTyping(priceInput, 0);
+                        priceInput.focus();
+                        const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
+                        priceInput.dispatchEvent(priceChangeEvent);
+                    }
+
+                    selectedProductIndex++;
+                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                }, TIMEOUTS.ROW_PROCESSING);
+            }
+
+            function addNewRowForExtra(selectedProduct, addButton) {
+                setTimeout(() => {
+                    if (addButton) {
+                        addButton.click();
+                    }
+
+                    inputIndex++;
+
+                    // Process the new row for the extra amount
+                    setTimeout(() => {
+                        const newRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
+                        const newProductInput = document.evaluate(`${newRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                        const newAmountInput = document.evaluate(`${newRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                        const newPriceInput = document.evaluate(`${newRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                        if (newProductInput && newAmountInput && newPriceInput) {
+                            simulateTyping(newProductInput, selectedProduct.product);
+                            selectFirstDropdownOption(newProductInput);
+
+                            setTimeout(() => {
+                                simulateTyping(newAmountInput, selectedProduct.extra);
+                                newAmountInput.focus();
+                                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                newAmountInput.dispatchEvent(changeEvent);
+
+                                simulateTyping(newPriceInput, 0);
+                                newPriceInput.focus();
+                                const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                newPriceInput.dispatchEvent(priceChangeEvent);
+
+                                selectedProductIndex++;
+                                setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                            }, TIMEOUTS.ROW_PROCESSING);
+                        }
+                    }, TIMEOUTS.ROW_PROCESSING);
+                }, TIMEOUTS.ROW_PROCESSING);
+            }
+
+            processNextInput();
+        } catch (error) {
+            showLoading(false);
+            showNotification(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
+            console.error('Error processing products:', error);
+        }
+    });
+
+    // Initialize product list display
+    displayProductList();
+    onUrlChange();
 })();
