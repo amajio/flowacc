@@ -18,6 +18,9 @@
     'use strict';
 
     GM_addStyle(`
+        html {
+            font-size: 100%;
+        }
         #select-popup {
             position: fixed;
             top: 50%;
@@ -41,7 +44,7 @@
             padding: 8px;
             text-align: left;
             border-bottom: 1px solid #ddd;
-            font-size: 16px;
+            font-size: 1em;
         }
         #options-table th {
             background-color: #f2f2f2;
@@ -77,13 +80,13 @@
         #selected-count {
             margin-bottom: 10px;
             font-weight: bold;
-            font-size: 15px;
+            font-size: 0.9em;
             color: #333;
         }
 
         #submit-selections, #clear-amount, #close-popup, #setting-list {
             padding: 10px 30px;
-            font-size: 16px;
+            font-size: 1em;
             cursor: pointer;
             color: white;
             border: none;
@@ -98,7 +101,7 @@
         #save-product-list, #close-product-list{
             padding: 10px 30px;
             border-radius: 5px;
-            font-size: 16px;
+            font-size: 1em;
             background-color: #2898CB;
             color: white;
             border: none;
@@ -120,7 +123,7 @@
             right: 410px;
             position: fixed;
             padding: 10px 30px;
-            font-size: 16px;
+            font-size: 1em;
             cursor: pointer;
             background-color: #88C426;
             color: white;
@@ -134,7 +137,7 @@
         .center{
             height: 30px;
             text-align: center;
-            font-size: 18px;
+            font-size: 1.5em;
             font-weight: bold;
         }
 
