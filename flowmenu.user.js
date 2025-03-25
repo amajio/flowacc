@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.401
 // @description  Displays a list of products in Flow Account
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -564,7 +564,7 @@ GM_addStyle(`
     document.getElementById('submit-selections').addEventListener('click', () => {
         try {
             const selectedProducts = [];
-            let processItems = 0 ;
+            let totalProcessItems = 0 ;
             const amountInputs = document.querySelectorAll('.amount-input');
             const extraInputs = document.querySelectorAll('.extra-input');
 
@@ -579,10 +579,10 @@ GM_addStyle(`
                         amount: amountValue,
                         extra: extraValue
                     });
-                    processItems++;
+                    totalProcessItems++;
                 }
                 if (extraValue > 0){
-                    processItems++
+                    totalProcessItems++
                 }
             });
 
@@ -593,13 +593,15 @@ GM_addStyle(`
 
             popup.style.display = 'None';
             let inputIndex = 1;
+            let itemInProcess = 1;
             let selectedProductIndex = 0;
-            const updateLoader = showLoading(true, `กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
+            const updateLoader = showLoading(true, `กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
 
             function processNextInput() {
                 if (selectedProductIndex >= selectedProducts.length) {
                     showLoading(false);
                     showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
+                    alert(itemInProcess)
                     return;
                 }
 
@@ -630,7 +632,6 @@ GM_addStyle(`
 
                 if (productInput.value.trim() !== "") {
                     inputIndex++;
-                    updateLoader(`กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
                     setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
                     return;
                 }
@@ -656,7 +657,8 @@ GM_addStyle(`
             function processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton) {
                 simulateTyping(productInput, selectedProduct.product);
                 selectFirstDropdownOption(productInput);
-
+                updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
+                itemInProcess++;
                 setTimeout(() => {
                     if (amountInput) {
                         simulateTyping(amountInput, selectedProduct.amount);
@@ -707,7 +709,6 @@ GM_addStyle(`
                     }
 
                     inputIndex++;
-                    updateLoader(`กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
 
                     // Process the new row for the extra amount
                     setTimeout(() => {
@@ -719,6 +720,8 @@ GM_addStyle(`
                         if (newProductInput && newAmountInput && newPriceInput) {
                             simulateTyping(newProductInput, selectedProduct.product);
                             selectFirstDropdownOption(newProductInput);
+                            updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
+                            itemInProcess++;
 
                             setTimeout(() => {
                                 simulateTyping(newAmountInput, selectedProduct.extra);
