@@ -601,7 +601,6 @@ GM_addStyle(`
                 if (selectedProductIndex >= selectedProducts.length) {
                     showLoading(false);
                     showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
-                    alert(itemInProcess)
                     return;
                 }
 
