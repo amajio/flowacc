@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.401
+// @version      1.402
 // @description  Displays a list of products in Flow Account
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -579,10 +579,8 @@ GM_addStyle(`
                         amount: amountValue,
                         extra: extraValue
                     });
-                    totalProcessItems++;
-                }
-                if (extraValue > 0){
-                    totalProcessItems++
+                    if(amountValue > 0) totalProcessItems++;
+                    if(extraValue > 0) totalProcessItems++;
                 }
             });
 
@@ -679,6 +677,8 @@ GM_addStyle(`
             function processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton) {
                 simulateTyping(productInput, selectedProduct.product);
                 selectFirstDropdownOption(productInput);
+                updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
+                itemInProcess++;
 
                 setTimeout(() => {
                     if (amountInput) {
