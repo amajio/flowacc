@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.331
+// @version      1.4
 // @description  Displays a list of products in Flow Account
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -50,13 +50,13 @@ GM_addStyle(`
   }
   #options-table th, #options-table td {
     padding: 8px;
-    text-align: left;
     border-bottom: 1px solid #ddd;
     font-size: 1em;
   }
   #options-table th {
     background-color: #3CAEDA;
     color: white;
+    text-align: center;
   }
   .amount-input, .extra-input {
     width: 65px;
@@ -148,7 +148,7 @@ GM_addStyle(`
   .highlight-row {
     background-color: #3CAEDA !important;
   }
-  .highlight-product {
+  .highlight-product,.highlight-number {
     font-weight: bold !important;
   }
   .loading-overlay {
@@ -184,10 +184,13 @@ GM_addStyle(`
   .notification.success {
     background: #3CAEDA;
   }
-  #missing-product{
+  #empty-product{
      font-weight: bold;
      color: red;
      font-size: 1.1em;
+  }
+  .list-number{
+     text-align: center;
   }
 `);
 
@@ -205,6 +208,7 @@ GM_addStyle(`
         <table id="options-table">
             <thead>
                 <tr>
+                    <th>ลำดับ</th>
                     <th>สินค้า</th>
                     <th>จำนวน</th>
                     <th>แถม</th>
@@ -269,6 +273,20 @@ GM_addStyle(`
         }
     });
 
+    document.body.addEventListener("focus", function(event) {
+        if (event.target.matches(".amount-input, .extra-input")) {
+            if (event.target.value == 0) event.target.value = '';
+        }
+    }, true); // Use `true` to capture the focus event properly
+
+    document.body.addEventListener("blur", function(event) {
+        if (event.target.matches(".amount-input, .extra-input")) {
+            if (event.target.value.trim() === '') event.target.value = 0;
+            updateRowColors();
+        }
+    }, true); // Use `true` to capture the blur event properly
+
+
     // Keyboard navigation
     document.addEventListener('keydown', function(event) {
         let inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
@@ -314,19 +332,31 @@ GM_addStyle(`
         }
     }
 
-    function showLoading(show) {
+    function showLoading(show, message = 'กำลังใส่ข้อมูล...') {
         let loader = document.getElementById('loading-overlay');
+
         if (show) {
             if (!loader) {
                 loader = document.createElement('div');
                 loader.id = 'loading-overlay';
                 loader.className = 'loading-overlay';
-                loader.textContent = 'กำลังใส่ข้อมูล...';
                 document.body.appendChild(loader);
             }
-        } else if (loader) {
+            loader.textContent = message;
+            loader.style.display = 'flex'; // Ensure it's visible
+
+            // Return an update function for this specific loader instance
+            return (newMessage) => {
+                if (loader) {
+                    loader.textContent = newMessage;
+                }
+            };
+        }
+        else if (loader) {
             document.body.removeChild(loader);
         }
+
+        return () => {}; // Return empty function if not showing
     }
 
     function showNotification(message, type = 'info', delay = 3000) {
@@ -346,15 +376,18 @@ GM_addStyle(`
         rows.forEach(row => {
             const amountInput = row.querySelector(".amount-input");
             const extraInput = row.querySelector(".extra-input");
-            const productCell = row.querySelector("td:first-child");
+            const numberCell = row.querySelector("td:first-child");
+            const productCell = row.querySelector("td:nth-child(2)");
             const amount = amountInput ? parseInt(amountInput.value) || 0 : 0;
             const extra = extraInput ? parseInt(extraInput.value) || 0 : 0;
 
             if (amount > 0 || extra > 0) {
                 row.classList.add('highlight-row');
+                if (numberCell) numberCell.classList.add('highlight-number');
                 if (productCell) productCell.classList.add('highlight-product');
             } else {
                 row.classList.remove('highlight-row');
+                if (numberCell) numberCell.classList.remove('highlight-number');
                 if (productCell) productCell.classList.remove('highlight-product');
             }
         });
@@ -365,10 +398,13 @@ GM_addStyle(`
         optionsList.innerHTML = "";
 
         if(productList.length > 0){
-            productList.forEach(product => {
+            productList.forEach((product, index) => {
                 if(product.startsWith('//')) return;
 
                 const row = document.createElement('tr');
+                const number = document.createElement('td');
+                number.className = 'list-number';
+                number.textContent = index + 1;
                 const productCell = document.createElement('td');
                 productCell.textContent = product;
 
@@ -379,21 +415,6 @@ GM_addStyle(`
                 amountInput.min = '0';
                 amountInput.value = '0';
                 amountInput.setAttribute('data-product', product);
-
-                amountInput.addEventListener('input', function() {
-                    updateSelectedCount();
-                    updateRowColors(); // Immediate update
-                });
-
-                amountInput.addEventListener('focus', function() {
-                    if(this.value == 0) this.value = '';
-                });
-
-                amountInput.addEventListener('blur', function() {
-                    if (this.value.trim() === '') this.value = 0;
-                    updateRowColors(); // Update on blur too
-                });
-
                 amountCell.appendChild(amountInput);
 
                 const extraCell = document.createElement('td');
@@ -403,23 +424,9 @@ GM_addStyle(`
                 extraInput.min = '0';
                 extraInput.value = '0';
                 extraInput.setAttribute('data-product', product);
-
-                extraInput.addEventListener('input', function() {
-                    updateSelectedCount();
-                    updateRowColors(); // Immediate update
-                });
-
-                extraInput.addEventListener('focus', function() {
-                    if(this.value == 0) this.value = '';
-                });
-
-                extraInput.addEventListener('blur', function() {
-                    if (this.value.trim() === '') this.value = 0;
-                    updateRowColors(); // Update on blur too
-                });
-
                 extraCell.appendChild(extraInput);
 
+                row.appendChild(number);
                 row.appendChild(productCell);
                 row.appendChild(amountCell);
                 row.appendChild(extraCell);
@@ -428,13 +435,13 @@ GM_addStyle(`
             updateSelectedCount();
         }else{
             const row = document.createElement('tr');
-            const productCell = document.createElement('td');
-            productCell.id = 'missing-product';
-            productCell.setAttribute('colspan','3');
-            productCell.style.textAlign = 'center';
-            productCell.style.whiteSpace = "pre-line";
-            productCell.textContent = "ไม่พบรายการสินค้า\nกดปุ่ม ตั้งค่า เพื่อเพิ่มรายการสินค้า";
-            row.appendChild(productCell);
+            const emptyProduct = document.createElement('td');
+            emptyProduct.id = 'empty-product';
+            emptyProduct.setAttribute('colspan','4');
+            emptyProduct.style.textAlign = 'center';
+            emptyProduct.style.whiteSpace = "pre-line";
+            emptyProduct.textContent = "ไม่พบรายการสินค้า\nกดปุ่ม ตั้งค่า เพื่อเพิ่มรายการสินค้า";
+            row.appendChild(emptyProduct);
             optionsList.appendChild(row);
             updateSelectedCount();
         }
@@ -444,7 +451,6 @@ GM_addStyle(`
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
         let selectedCount = 0;
-        let rowCount = 0;
         let totalItems = 0;
         let allItems = 0;
         let extraCount = 0;
@@ -457,14 +463,11 @@ GM_addStyle(`
             if (amountValue > 0 || extraValue > 0) {
                 selectedCount++;
                 totalItems += amountValue + extraValue;
-                if (amountValue > 0) rowCount++;
                 if (extraValue > 0) {
-                    rowCount++;
                     extraCount++;
                 }
             }
         });
-
         document.getElementById('selected-count').innerText =
             `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
     }
@@ -561,6 +564,7 @@ GM_addStyle(`
     document.getElementById('submit-selections').addEventListener('click', () => {
         try {
             const selectedProducts = [];
+            let processItems = 0 ;
             const amountInputs = document.querySelectorAll('.amount-input');
             const extraInputs = document.querySelectorAll('.extra-input');
 
@@ -575,18 +579,22 @@ GM_addStyle(`
                         amount: amountValue,
                         extra: extraValue
                     });
+                    processItems++;
+                }
+                if (extraValue > 0){
+                    processItems++
                 }
             });
 
             if (selectedProducts.length == 0) {
-                showNotification('กรุณาระบุจำนวน', 'error', 1000);
+                showNotification('กรุณาระบุจำนวน', 'error', 1200);
                 return;
             }
-            showLoading(true);
 
             popup.style.display = 'None';
             let inputIndex = 1;
             let selectedProductIndex = 0;
+            const updateLoader = showLoading(true, `กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
 
             function processNextInput() {
                 if (selectedProductIndex >= selectedProducts.length) {
@@ -622,6 +630,7 @@ GM_addStyle(`
 
                 if (productInput.value.trim() !== "") {
                     inputIndex++;
+                    updateLoader(`กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
                     setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
                     return;
                 }
@@ -698,6 +707,7 @@ GM_addStyle(`
                     }
 
                     inputIndex++;
+                    updateLoader(`กำลังประมวลผล ${inputIndex} / ${processItems} รายการ`);
 
                     // Process the new row for the extra amount
                     setTimeout(() => {
