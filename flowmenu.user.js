@@ -829,12 +829,6 @@ class FlowAccountMenu {
         container.appendChild(buttonContainer);
         this.hidePopup();
 
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeOverlay();
-            }
-        });
-
         // Focus textarea
         setTimeout(() => textArea.focus(), 100);
 
@@ -1239,12 +1233,6 @@ class FlowAccountMenu {
             GM_setValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN);
             GM_setValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING);
             GM_setValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM);
-        });
-
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeOverlay();
-            }
         });
 
         buttonContainer.appendChild(saveButton);
