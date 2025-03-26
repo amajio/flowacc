@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.402
+// @version      1.5
 // @description  Displays a list of products in Flow Account
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -16,194 +16,291 @@
 
 'use strict';
 
-// Constants
-const PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
-const TIMEOUTS = {
-  DROPDOWN: 600,
-  ROW_PROCESSING: 700,
-  NEXT_ITEM: 200
-};
+class FlowAccountMenu {
+    constructor() {
+        this.PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
+        this.DEFAULT_TIMEOUTS = {
+            DROPDOWN: 500,
+            ROW_PROCESSING: 700,
+            NEXT_ITEM: 50,
+        };
+        this.TIMEOUTS = {
+            DROPDOWN: GM_getValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN),
+            ROW_PROCESSING: GM_getValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING),
+            NEXT_ITEM: GM_getValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM),
+        };
+        this.productList = GM_getValue('productList', []);
+        this.lastUrl = location.href;
 
-// Styles
-GM_addStyle(`
-  html {
-    font-size: 100%;
-  }
-  #select-popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: white;
-    padding: 20px;
-    border: 2px solid #ccc;
-    z-index: 9999;
-    display: none;
-    width: 700px;
-    height: 800px;
-    overflow-y: auto;
-  }
-  #options-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 10px;
-  }
-  #options-table th, #options-table td {
-    padding: 8px;
-    border-bottom: 1px solid #ddd;
-    font-size: 1em;
-  }
-  #options-table th {
-    background-color: #3CAEDA;
-    color: white;
-    text-align: center;
-  }
-  .amount-input, .extra-input {
-    width: 65px;
-    padding: 5px;
-    box-sizing: border-box;
-    border-radius: 5px;
-    border: 1px solid #808080;
-  }
-  .amount-input:focus, .extra-input:focus {
-    border: 1px solid #2898CB;
-    box-shadow: 0 0 2px #2898CB;
-  }
-  #controls-container {
-    position: sticky;
-    bottom: 0;
-    background: white;
-    padding: 10px 0;
-    border-top: 1px solid #ccc;
-  }
-  #buttons-container {
-    position: sticky;
-    bottom: 0;
-    background: white;
-    padding: 20px 0;
-    border-top: 1px solid #ccc;
-  }
-  #selected-count {
-    margin-bottom: 10px;
-    font-weight: bold;
-    font-size: 0.9em;
-    color: #333;
-  }
-  #submit-selections, #clear-amount, #close-popup, #setting-list {
-    padding: 10px 30px;
-    margin-right: 2px;
-    font-size: 1em;
-    cursor: pointer;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    background-color: #2898CB;
-  }
+        this.buttonOpen = {
+            targetXPath: '//*[@id="documentHeader"]/div/div[2]',
+            buttonId: 'openPopupButton',
+            buttonText: 'รายการสินค้า'
+        };
 
-  #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
-    background-color: #2887B6;
-  }
-  #save-product-list, #close-product-list{
-    padding: 10px 30px;
-    border-radius: 5px;
-    font-size: 1em;
-    background-color: #2898CB;
-    color: white;
-    border: none;
-    cursor: pointer;
-  }
-  #save-product-list:hover,#close-product-list:hover {
-    background-color: #2887B6;
-  }
-  #close-popup {
-    position: absolute;
-    right: 0px;
-  }
-  #setting-list{
-    position: absolute;
-    right: 85px;
-  }
-  #openPopupButton {
-    z-index: 99999;
-    top: 19px;
-    right: 410px;
-    position: fixed;
-    padding: 10px 30px;
-    font-size: 1em;
-    cursor: pointer;
-    background-color: #88C426;
-    color: white;
-    border: none;
-  }
-  #openPopupButton:hover {
-    color: white;
-    background-color: #74AC18;
-  }
-  .center{
-    height: 30px;
-    text-align: center;
-    font-size: 1.5em;
-    font-weight: bold;
-  }
-  .highlight-row {
-    background-color: #3CAEDA !important;
-  }
-  .highlight-product,.highlight-number {
-    font-weight: bold !important;
-  }
-  .loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.7);
-    z-index: 10000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 1.5em;
-    color: #2898CB;
-  }
-  .notification {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    padding: 10px;
-    background: #33b5e5;
-    color: white;
-    border-radius: 4px;
-    z-index: 99999;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  }
-  .notification.error {
-    left: 50%;
-    top: 50%;
-    background: #ff4444;
-  }
-  .notification.success {
-    background: #3CAEDA;
-  }
-  #empty-product{
-     font-weight: bold;
-     color: red;
-     font-size: 1.1em;
-  }
-  .list-number{
-     text-align: center;
-  }
-`);
+        this.initStyles();
+        this.initPopup();
+        this.initOpenButton();
+        this.setupObservers();
+        this.registerMenuCommands();
+        this.displayProductList();
+    }
 
-// Main function
-(function () {
-    let productList = GM_getValue('productList', []);
-    let lastUrl = location.href;
+    initStyles() {
+        GM_addStyle(`
+            html { font-size: 100%; }
+            #select-popup {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                padding: 20px;
+                border: 2px solid #ccc;
+                z-index: 9999;
+                display: none;
+                width: 700px;
+                height: 800px;
+                overflow-y: auto;
+            }
+            #options-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 10px;
+            }
+            #options-table th, #options-table td {
+                padding: 8px;
+                border-bottom: 1px solid #ddd;
+                font-size: 1em;
+            }
+            #options-table th {
+                background-color: #3CAEDA;
+                color: white;
+                text-align: center;
+            }
+            .amount-input, .extra-input {
+                width: 65px;
+                padding: 5px;
+                box-sizing: border-box;
+                border-radius: 5px;
+                border: 1px solid #808080;
+            }
+            .amount-input:focus, .extra-input:focus {
+                border: 1px solid #2898CB;
+                box-shadow: 0 0 2px #2898CB;
+            }
+            #controls-container {
+                position: sticky;
+                bottom: 0;
+                background: white;
+                padding: 10px 0;
+                border-top: 1px solid #ccc;
+            }
+            #buttons-container {
+                position: sticky;
+                bottom: 0;
+                background: white;
+                padding: 20px 0;
+                border-top: 1px solid #ccc;
+            }
+            #selected-count {
+                margin-bottom: 10px;
+                font-weight: bold;
+                font-size: 0.9em;
+                color: #333;
+            }
+            #submit-selections, #clear-amount, #close-popup, #setting-list {
+                padding: 9px 20px;
+                margin-right: 2px;
+                font-size: 1em;
+                cursor: pointer;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                background-color: #2898CB;
+            }
+            #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
+                background-color: #2887B6;
+            }
+            #close-popup {
+                position: absolute;
+                right: 0px;
+            }
+            #openPopupButton {
+                z-index: 99999;
+                margin-left: 8px;
+                padding: 10px 30px;
+                background-color: #88C426;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 1em;
+                transition: all 0.3s;
+            }
+            #openPopupButton:hover {
+                color: white;
+                background-color: #74AC18;
+            }
+            .center{
+                height: 30px;
+                text-align: center;
+                font-size: 1.5em;
+                font-weight: bold;
+            }
+            .highlight-row {
+                background-color: #3CAEDA !important;
+            }
+            .highlight-product,.highlight-number {
+                font-weight: bold !important;
+            }
+            .loading-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(255, 255, 255, 0.7);
+                z-index: 10000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                font-size: 1.5em;
+                color: #2898CB;
+            }
+            .notification {
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                padding: 10px;
+                background: #33b5e5;
+                color: white;
+                border-radius: 4px;
+                z-index: 100000;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+            .notification.error {
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                background: #ff4444;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-size: 16px;
+                z-index: 100000;
+                opacity: 1;
+                transition: opacity 0.3s ease-in-out;
+            }
+            .notification.success {
+                background: #3CAEDA;
+            }
+            #empty-product{
+                font-weight: bold;
+                color: red;
+                font-size: 1.1em;
+            }
+            .list-number{
+                text-align: center;
+            }
+            .dropdown {
+                position: absolute;
+                right: 84px;
+                display: inline-block;
+            }
+            .dropdown-content {
+                display: none;
+                position: absolute;
+                bottom: 100%;
+                right: 0;
+                background-color: #f9f9f9;
+                min-width: 160px;
+                box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+                z-index: 1;
+                border-radius: 5px;
+            }
+            .dropdown-content a {
+                color: black;
+                padding: 12px 16px;
+                text-decoration: none;
+                display: block;
+                cursor: pointer;
+                border-radius: 5px;
+            }
+            .dropdown-content a:hover {
+                background-color: #2898CB;
+                color: white;
+            }
+            .dropdown:hover .dropdown-content {
+                display: block;
+            }
 
-    // Create the popup
-    const popup = document.createElement('div');
-    popup.id = 'select-popup';
-    popup.style.height = '80vh';
-    popup.innerHTML = `
+            #setting-list {
+                position: relative;
+                padding: 8.5px 20px;
+            }
+
+            #menu-delay-settings:before{
+                content: "⏱ ";
+                font-size: 1.3em;
+            }
+
+            #menu-add-product:before{
+                content: "📄 ";
+                font-size: 1.1em;
+            }
+
+            #close-popup:before{
+                content: "✖ ";
+                font-size: 1.2em;
+            }
+
+            #setting-list:before {
+                content: "🛠 ";
+                font-size: 1.3em;
+            }
+
+            #submit-selections:before{
+                content: "✔ ";
+                font-size: 1.2em;
+            }
+            #clear-amount:before{
+                content: "↻ ";
+                font-size: 1.35em;
+            }
+            .modern-button-primary:before{
+                content: "🖫 ";
+                font-size: 1.3em;
+            }
+            .modern-button-secondary:before{
+                content: "✖ ";
+                font-size: 1.1em;
+            }
+            #select-popup {
+				display: none;
+				opacity: 0;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%) translateY(-20px);
+				transition: opacity 0.25s ease, transform 0.3s ease;
+			}
+
+			#select-popup.visible {
+				display: block;
+				opacity: 1;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%) translateY(0);
+			}
+        `);
+    }
+
+    initPopup() {
+        this.popup = document.createElement('div');
+        this.popup.id = 'select-popup';
+        this.popup.style.height = '80vh';
+        this.popup.innerHTML = `
         <div class="center">รายการสินค้า</div>
         <table id="options-table">
             <thead>
@@ -220,119 +317,197 @@ GM_addStyle(`
             <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | เลือก: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
             <button id="submit-selections">ยืนยัน</button>
             <button id="clear-amount">ล้างจำนวน</button>
-            <button id="setting-list">ตั้งค่า</button>
+            <div class="dropdown">
+                <button id="setting-list">ตั้งค่า</button>
+                <div class="dropdown-content">
+                    <a id="menu-add-product">รายการสินค้า</a>
+                    <a id="menu-delay-settings">ตั้งค่าหน่วงเวลา</a>
+                </div>
+            </div>
             <button id="close-popup">ปิด</button>
         </div>
     `;
-    document.body.appendChild(popup);
+        document.body.appendChild(this.popup);
 
-    // Create open button
-    const openPopupButton = document.createElement('button');
-    openPopupButton.id = 'openPopupButton';
-    openPopupButton.innerText = 'รายการสินค้า';
-    openPopupButton.style.borderRadius = '5px';
-    document.body.appendChild(openPopupButton);
+        // Event listeners for popup
+        document.getElementById('close-popup').addEventListener('click', () => {
+            this.hidePopup(); // Use hidePopup to animate the closing
+        });
 
-    // URL change observer
-    const observer = new MutationObserver(() => {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
-            onUrlChange();
+        document.getElementById('clear-amount').addEventListener('click', () => {
+            this.clearAmountInputs();
+        });
+
+        document.getElementById('submit-selections').addEventListener('click', () => {
+            this.processSelectedProducts();
+        });
+
+        // Dropdown menu events
+        document.getElementById('menu-add-product')?.addEventListener('click', () => {
+            this.hidePopup();
+            this.openTextAreaPopup();
+        });
+
+        document.getElementById('menu-delay-settings')?.addEventListener('click', () => {
+            this.settingTimeout();
+            this.hidePopup();
+        });
+
+        // Input event delegation
+        document.body.addEventListener("input", (event) => {
+            if (event.target.matches(".amount-input, .extra-input")) {
+                this.updateSelectedCount();
+                this.updateRowColors();
+            }
+        }, true);
+
+        document.body.addEventListener("focus", (event) => {
+            if (event.target.matches(".amount-input, .extra-input") && event.target.value == 0) {
+                event.target.value = '';
+            }
+        }, true);
+
+        document.body.addEventListener("blur", (event) => {
+            if (event.target.matches(".amount-input, .extra-input")) {
+                if (event.target.value.trim() === '') event.target.value = 0;
+                this.updateRowColors();
+            }
+        }, true);
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (event) => {
+            const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
+            const currentIndex = inputs.indexOf(document.activeElement);
+            if (currentIndex === -1) return;
+
+            const columnCount = 2;
+
+            switch(event.key) {
+                case 'ArrowRight':
+                    if ((currentIndex + 1) % columnCount !== 0) {
+                        inputs[currentIndex + 1]?.focus();
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowLeft':
+                    if (currentIndex % columnCount !== 0) {
+                        inputs[currentIndex - 1]?.focus();
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowDown':
+                    if (currentIndex + columnCount < inputs.length) {
+                        inputs[currentIndex + columnCount]?.focus();
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowUp':
+                    if (currentIndex - columnCount >= 0) {
+                        inputs[currentIndex - columnCount]?.focus();
+                        event.preventDefault();
+                    }
+                    break;
+            }
+        });
+    }
+
+    showPopup() {
+        this.popup.style.display = 'block'; // Make it visible first
+        setTimeout(() => {
+            this.popup.classList.add('visible'); // Start the animation
+        }, 10); // Small delay for the transition to work
+    }
+
+    hidePopup() {
+        this.popup.classList.remove('visible'); // Trigger the hide animation
+
+        // After the animation duration, hide the popup
+        setTimeout(() => {
+            this.popup.style.display = 'none'; // Actually hide it
+        }, 500); // Match the duration of the transition
+    }
+
+    initOpenButton() {
+        // Create the button element
+        this.openPopupButton = document.createElement('button');
+        this.openPopupButton.id = this.buttonOpen.buttonId;
+        this.openPopupButton.innerText = this.buttonOpen.buttonText;
+
+            // Add click handler
+        this.openPopupButton.addEventListener('click', () => {
+            if (this.popup) {
+                this.showPopup();
+                this.updateSelectedCount();
+            }
+        });
+
+        this.injectButtonWithRetry();
+    }
+
+    injectButtonWithRetry(attempt = 0) {
+        const maxAttempts = 5;
+        const retryDelay = 1000;
+
+        const target = document.evaluate(
+            this.buttonOpen.targetXPath,
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        ).singleNodeValue;
+
+        if (target) {
+            // Check if button does not exist
+            if (!document.getElementById(this.buttonOpen.buttonId)) {
+                target.insertBefore(this.openPopupButton,target.firstChild);
+                this.openPopupButton.style.display = 'inline-block';
+            }
+        } else if (attempt < maxAttempts) {
+            setTimeout(() => this.injectButtonWithRetry(attempt + 1), retryDelay);
         }
-    });
-    observer.observe(document, { subtree: true, childList: true });
+    }
 
-    // Event listeners
-    openPopupButton.addEventListener('click', () => {
-        popup.style.display = 'block';
-        updateSelectedCount();
-    });
+    setupObservers() {
+        const observer = new MutationObserver((mutations) => {
 
-    document.getElementById('setting-list').addEventListener('click', () => {
-        popup.style.display = 'none';
-        openTextAreaPopup();
-    });
+            if (!document.getElementById(this.buttonOpen.buttonId) && this.openPopupButton) {
+                this.injectButtonWithRetry();
+                this.includeURL();
+            }
+        });
 
-    document.getElementById('close-popup').addEventListener('click', () => {
-        popup.style.display = 'none';
-    });
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
 
-    document.getElementById('clear-amount').addEventListener('click', () => {
+    includeURL() {
+        if (location.href !== this.lastUrl){
+            this.lastUrl = location.href;
+            if(this.PATHS.some(path => location.href.includes(path))) {
+                this.clearAmountInputs();
+            } else {
+              if(this.openPopupButton.style.display !== 'none') this.openPopupButton.style.display = 'none';
+            }
+        }
+    }
+
+    registerMenuCommands() {
+        GM_registerMenuCommand('แก้ไขรายการสินค้า', () => this.openTextAreaPopup());
+        GM_registerMenuCommand('ตั้งค่าหน่วงเวลาคำสั่ง', () => this.settingTimeout());
+    }
+
+    clearAmountInputs() {
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
         amountInputs.forEach(input => { input.value = 0; });
         extraInputs.forEach(input => { input.value = 0; });
-        updateSelectedCount();
-        updateRowColors(); // Explicitly update colors after clear
-    });
-
-    document.body.addEventListener("input", function(event) {
-        if (event.target.matches(".amount-input, .extra-input")) {
-            updateSelectedCount();
-            updateRowColors(); // Update colors immediately on input
-        }
-    });
-
-    document.body.addEventListener("focus", function(event) {
-        if (event.target.matches(".amount-input, .extra-input")) {
-            if (event.target.value == 0) event.target.value = '';
-        }
-    }, true); // Use `true` to capture the focus event properly
-
-    document.body.addEventListener("blur", function(event) {
-        if (event.target.matches(".amount-input, .extra-input")) {
-            if (event.target.value.trim() === '') event.target.value = 0;
-            updateRowColors();
-        }
-    }, true); // Use `true` to capture the blur event properly
-
-
-    // Keyboard navigation
-    document.addEventListener('keydown', function(event) {
-        let inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
-        let currentIndex = inputs.indexOf(document.activeElement);
-        if (currentIndex === -1) return;
-
-        let columnCount = 2;
-        let rowCount = inputs.length / columnCount;
-
-        if (event.key === 'ArrowRight' && (currentIndex + 1) % columnCount !== 0) {
-            inputs[currentIndex + 1]?.focus();
-            event.preventDefault();
-        } else if (event.key === 'ArrowLeft' && currentIndex % columnCount !== 0) {
-            inputs[currentIndex - 1]?.focus();
-            event.preventDefault();
-        } else if (event.key === 'ArrowDown' && currentIndex + columnCount < inputs.length) {
-            inputs[currentIndex + columnCount]?.focus();
-            event.preventDefault();
-        } else if (event.key === 'ArrowUp' && currentIndex - columnCount >= 0) {
-            inputs[currentIndex - columnCount]?.focus();
-            event.preventDefault();
-        }
-
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-            event.preventDefault();
-        }
-    });
-
-    // Functions
-    function onUrlChange() {
-        //openPopupButton.style.display = PATHS.some(path => location.href.includes(path)) ? 'block' : 'none';
-
-        if(PATHS.some(path => location.href.includes(path))){
-            openPopupButton.style.display = 'block';
-            const amountInputs = document.querySelectorAll('.amount-input');
-            const extraInputs = document.querySelectorAll('.extra-input');
-            amountInputs.forEach(input => { input.value = 0; });
-            extraInputs.forEach(input => { input.value = 0; });
-            updateSelectedCount();
-            updateRowColors(); // Explicitly update colors after clear
-        }else{
-            openPopupButton.style.display = 'none';
-        }
+        this.updateSelectedCount();
+        this.updateRowColors();
     }
 
-    function showLoading(show, message = 'กำลังใส่ข้อมูล...') {
+    showLoading(show, message = 'กำลังประมวลผล...') {
         let loader = document.getElementById('loading-overlay');
 
         if (show) {
@@ -343,9 +518,8 @@ GM_addStyle(`
                 document.body.appendChild(loader);
             }
             loader.textContent = message;
-            loader.style.display = 'flex'; // Ensure it's visible
+            loader.style.display = 'flex';
 
-            // Return an update function for this specific loader instance
             return (newMessage) => {
                 if (loader) {
                     loader.textContent = newMessage;
@@ -356,10 +530,10 @@ GM_addStyle(`
             document.body.removeChild(loader);
         }
 
-        return () => {}; // Return empty function if not showing
+        return () => {};
     }
 
-    function showNotification(message, type = 'info', delay = 3000) {
+    showNotification(message, type = 'info', delay = 3000) {
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
@@ -371,7 +545,7 @@ GM_addStyle(`
         }, delay);
     }
 
-    function updateRowColors() {
+    updateRowColors() {
         const rows = document.querySelectorAll("#options-table tbody tr");
         rows.forEach(row => {
             const amountInput = row.querySelector(".amount-input");
@@ -393,12 +567,12 @@ GM_addStyle(`
         });
     }
 
-    function displayProductList() {
+    displayProductList() {
         const optionsList = document.getElementById('options-list');
         optionsList.innerHTML = "";
 
-        if(productList.length > 0){
-            productList.forEach((product, index) => {
+        if(this.productList.length > 0) {
+            this.productList.forEach((product, index) => {
                 if(product.startsWith('//')) return;
 
                 const row = document.createElement('tr');
@@ -432,8 +606,8 @@ GM_addStyle(`
                 row.appendChild(extraCell);
                 optionsList.appendChild(row);
             });
-            updateSelectedCount();
-        }else{
+            this.updateSelectedCount();
+        } else {
             const row = document.createElement('tr');
             const emptyProduct = document.createElement('td');
             emptyProduct.id = 'empty-product';
@@ -443,11 +617,11 @@ GM_addStyle(`
             emptyProduct.textContent = "ไม่พบรายการสินค้า\nกดปุ่ม ตั้งค่า เพื่อเพิ่มรายการสินค้า";
             row.appendChild(emptyProduct);
             optionsList.appendChild(row);
-            updateSelectedCount();
+            this.updateSelectedCount();
         }
     }
 
-    function updateSelectedCount() {
+    updateSelectedCount() {
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
         let selectedCount = 0;
@@ -468,103 +642,233 @@ GM_addStyle(`
                 }
             }
         });
+
         document.getElementById('selected-count').innerText =
             `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
     }
 
-    function openTextAreaPopup() {
-        const txtPopup = document.createElement('div');
-        txtPopup.style.cssText = `
+    openTextAreaPopup() {
+        // Add modern styles
+        GM_addStyle(`
+        .modern-overlay {
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border: 1px solid #ccc;
-            z-index: 99999;
-            width: 700px;
-            height: 800px;
-            overflow: auto;
-        `;
-
-        const textArea = document.createElement('textarea');
-        textArea.style.cssText = `
+            top: 0;
+            left: 0;
             width: 100%;
-            height: 85%;
-            font-size: 16px;
-        `;
-        textArea.value = productList.join('\n');
-        txtPopup.appendChild(textArea);
+            height: 100%;
+            background-color: rgba(0,0,0,0);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease-out, background-color 0.3s ease-out;
+            backdrop-filter: blur(0px);
+        }
 
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.cssText = `
+        .modern-overlay.active {
+            background-color: rgba(0,0,0,0.7);
+            opacity: 1;
+            pointer-events: all;
+            backdrop-filter: blur(5px);
+        }
+
+        .modern-overlay.active .modern-container {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .modern-container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 12px;
+            width: min(90vw, 800px);
+            max-height: 90vh;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s ease-out 0.1s;
+        }
+
+        .modern-textarea {
+            width: 100%;
+            height: 65vh;
+            font-size: 14px;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            resize: none;
+            line-height: 1.5;
+            background: #f9f9f9;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .modern-textarea:focus {
+            outline: none;
+            border-color: #2898CB;
+            box-shadow: 0 0 0 2px rgba(40, 152, 203, 0.2);
+            background: #fff;
+        }
+
+        .modern-button-container {
             display: flex;
             justify-content: flex-end;
-            margin-top: 10px;
-            gap: 10px;
-        `;
+            gap: 12px;
+        }
 
+        .modern-button {
+            padding: 0.75rem 1.75rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modern-button-primary {
+            background-color: #2898CB;
+            color: white;
+        }
+
+        .modern-button-secondary {
+            background-color: #f0f0f0;
+            color: #555;
+        }
+
+        .modern-button-primary:hover {
+            background-color: #1e7ba8;
+            transform: translateY(-1px);
+        }
+
+        .modern-button-secondary:hover {
+            background-color: #e0e0e0;
+            transform: translateY(-1px);
+        }
+
+        .modern-button:active {
+            transform: translateY(0);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    `);
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'modern-overlay';
+        document.body.appendChild(overlay);
+
+        // Create container
+        const container = document.createElement('div');
+        container.className = 'modern-container';
+        overlay.appendChild(container);
+
+        // Create textarea
+        const textArea = document.createElement('textarea');
+        textArea.className = 'modern-textarea';
+        textArea.value = this.productList.join('\n');
+        textArea.placeholder = "ใส่รายการสินค้า, บรรทัดละ 1 รายการ...";
+        container.appendChild(textArea);
+
+        // Create button container
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'modern-button-container';
+
+        const closeOverlay = () => {
+            overlay.classList.remove('active');
+            setTimeout(() => {
+                overlay.remove();
+                this.showPopup();
+            }, 200); // Match the transition duration
+        };
+
+        // Create save button
         const saveButton = document.createElement('button');
-        saveButton.id = 'save-product-list';
-        saveButton.textContent = 'บันทึกรายการ';
-        saveButton.addEventListener('click', function() {
-            productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
-            GM_setValue('productList', productList);
-            showNotification('บันทึกรายการสินค้าเรียบร้อยแล้ว', 'success');
-            document.body.removeChild(txtPopup);
-            displayProductList();
-            popup.style.display = 'block';
+        saveButton.className = 'modern-button modern-button-primary';
+        saveButton.textContent = 'บันทึก';
+        saveButton.addEventListener('click', () => {
+            this.productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
+            GM_setValue('productList', this.productList);
+            this.showNotification('บันทึกรายการสินค้าเรียบร้อยแล้ว', 'success');
+            closeOverlay();
         });
 
+        // Create close button
         const closeButton = document.createElement('button');
-        closeButton.id = 'close-product-list';
-        closeButton.textContent = 'ปิด';
-        closeButton.addEventListener('click', function() {
-            document.body.removeChild(txtPopup);
-            popup.style.display = 'block';
+        closeButton.className = 'modern-button modern-button-secondary';
+        closeButton.textContent = 'ยกเลิก';
+        closeButton.addEventListener('click', closeOverlay);
+
+        // Add buttons to container
+        buttonContainer.appendChild(closeButton);
+        buttonContainer.appendChild(saveButton);
+        container.appendChild(buttonContainer);
+        this.hidePopup();
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeOverlay();
+            }
         });
 
-        buttonContainer.appendChild(saveButton);
-        buttonContainer.appendChild(closeButton);
-        txtPopup.appendChild(buttonContainer);
-        document.body.appendChild(txtPopup);
+        // Focus textarea
+        setTimeout(() => textArea.focus(), 100);
+
+        setTimeout(() => {
+            overlay.classList.add('active');
+        }, 10);
     }
 
-    // Initialize
-    displayProductList();
-    onUrlChange();
-    GM_registerMenuCommand('แก้ไขรายการสินค้า', openTextAreaPopup);
-        // Simulate typing function
-    function simulateTyping(inputElement, value) {
+    simulateTyping(inputElement, value) {
         const event = new Event('input', { 'bubbles': true, 'cancelable': true });
         inputElement.value = value;
         inputElement.dispatchEvent(event);
         inputElement.blur();
     }
 
-    // Simulate clicking function
-    function simulateClick(inputElement) {
+    simulateClick(inputElement) {
         const clickEvent = new MouseEvent('click', { 'bubbles': true, 'cancelable': true });
         inputElement.dispatchEvent(clickEvent);
     }
 
-    // Select first dropdown option
-    function selectFirstDropdownOption(inputElement) {
-        simulateClick(inputElement);
+    selectFirstDropdownOption(inputElement) {
+        this.simulateClick(inputElement);
         setTimeout(() => {
             const dropdownOptions = inputElement.closest('typeahead-custom').querySelectorAll('.tt-suggestion');
             if (dropdownOptions.length > 0) {
                 dropdownOptions[0].click();
             }
-        }, 600);
+        }, this.TIMEOUTS.DROPDOWN);
     }
 
-    // Process selected products
-    document.getElementById('submit-selections').addEventListener('click', () => {
+    processSelectedProducts() {
         try {
             const selectedProducts = [];
-            let totalProcessItems = 0 ;
+            let totalProcessItems = 0;
             const amountInputs = document.querySelectorAll('.amount-input');
             const extraInputs = document.querySelectorAll('.extra-input');
 
@@ -584,30 +888,30 @@ GM_addStyle(`
                 }
             });
 
-            if (selectedProducts.length == 0) {
-                showNotification('กรุณาระบุจำนวน', 'error', 1200);
+            if (selectedProducts.length === 0) {
+                this.showNotification('กรุณาระบุจำนวน', 'error', 1200);
                 return;
             }
 
-            popup.style.display = 'None';
+            this.hidePopup();
             let inputIndex = 1;
             let itemInProcess = 1;
             let selectedProductIndex = 0;
-            const updateLoader = showLoading(true, `กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
+            const updateLoader = this.showLoading(true, `กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
 
-            function processNextInput() {
+            // Main processing function (keep as inner function to maintain closure)
+            const processNextInput = () => {
                 if (selectedProductIndex >= selectedProducts.length) {
-                    showLoading(false);
-                    showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
+                    this.showLoading(false);
+                    this.showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
                     return;
                 }
 
                 const selectedProduct = selectedProducts[selectedProductIndex];
 
-                // Skip if amount = 0 and extra = 0
                 if (selectedProduct.amount === 0 && selectedProduct.extra === 0) {
                     selectedProductIndex++;
-                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                    setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
                     return;
                 }
 
@@ -623,133 +927,334 @@ GM_addStyle(`
                 const addButton = document.evaluate(addButtonXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 
                 if (!productInput) {
-                    handleMissingProductInput(addButton);
+                    if (addButton) {
+                        addButton.click();
+                        setTimeout(processNextInput, this.TIMEOUTS.ROW_PROCESSING);
+                    } else {
+                        this.showLoading(false);
+                        this.showNotification("ไม่พบปุ่มเพิ่มรายการ!", 'error');
+                    }
                     return;
                 }
 
                 if (productInput.value.trim() !== "") {
                     inputIndex++;
-                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
+                    setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
                     return;
                 }
 
-                // Process main row if amount > 0
+                // Process main product amount if > 0
                 if (selectedProduct.amount > 0) {
-                    processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton);
-                } else if (selectedProduct.extra > 0) {
-                    processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton);
-                }
-            }
+                    this.simulateTyping(productInput, selectedProduct.product);
+                    this.selectFirstDropdownOption(productInput);
+                    updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
 
-            function handleMissingProductInput(addButton) {
-                if (addButton) {
-                    addButton.click();
-                    setTimeout(processNextInput, TIMEOUTS.ROW_PROCESSING);
-                } else {
-                    showLoading(false);
-                    showNotification("ไม่พบปุ่มเพิ่มรายการ!", 'error');
-                }
-            }
-
-            function processMainRow(selectedProduct, productInput, amountInput, priceInput, addButton) {
-                simulateTyping(productInput, selectedProduct.product);
-                selectFirstDropdownOption(productInput);
-                updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
-                itemInProcess++;
-                setTimeout(() => {
-                    if (amountInput) {
-                        simulateTyping(amountInput, selectedProduct.amount);
-                        amountInput.focus();
-                        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                        amountInput.dispatchEvent(changeEvent);
-                    }
-
-                    // If extra > 0, add a new row for the extra amount
-                    if (selectedProduct.extra > 0) {
-                        addNewRowForExtra(selectedProduct, addButton);
-                    } else {
-                        selectedProductIndex++;
-                        setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
-                    }
-                }, TIMEOUTS.ROW_PROCESSING);
-            }
-
-            function processExtraRowOnly(selectedProduct, productInput, amountInput, priceInput, addButton) {
-                simulateTyping(productInput, selectedProduct.product);
-                selectFirstDropdownOption(productInput);
-                updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
-                itemInProcess++;
-
-                setTimeout(() => {
-                    if (amountInput) {
-                        simulateTyping(amountInput, selectedProduct.extra);
-                        amountInput.focus();
-                        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                        amountInput.dispatchEvent(changeEvent);
-                    }
-
-                    // Set price to 0 for the extra row
-                    if (priceInput) {
-                        simulateTyping(priceInput, 0);
-                        priceInput.focus();
-                        const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
-                        priceInput.dispatchEvent(priceChangeEvent);
-                    }
-
-                    selectedProductIndex++;
-                    setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
-                }, TIMEOUTS.ROW_PROCESSING);
-            }
-
-            function addNewRowForExtra(selectedProduct, addButton) {
-                setTimeout(() => {
-                    if (addButton) {
-                        addButton.click();
-                    }
-
-                    inputIndex++;
-
-                    // Process the new row for the extra amount
                     setTimeout(() => {
-                        const newRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
-                        const newProductInput = document.evaluate(`${newRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                        const newAmountInput = document.evaluate(`${newRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                        const newPriceInput = document.evaluate(`${newRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-                        if (newProductInput && newAmountInput && newPriceInput) {
-                            simulateTyping(newProductInput, selectedProduct.product);
-                            selectFirstDropdownOption(newProductInput);
-                            updateLoader(`กำลังประมวลผล ${itemInProcess} / ${totalProcessItems} รายการ`);
-                            itemInProcess++;
-
-                            setTimeout(() => {
-                                simulateTyping(newAmountInput, selectedProduct.extra);
-                                newAmountInput.focus();
-                                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                                newAmountInput.dispatchEvent(changeEvent);
-
-                                simulateTyping(newPriceInput, 0);
-                                newPriceInput.focus();
-                                const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
-                                newPriceInput.dispatchEvent(priceChangeEvent);
-
-                                selectedProductIndex++;
-                                setTimeout(processNextInput, TIMEOUTS.NEXT_ITEM);
-                            }, TIMEOUTS.ROW_PROCESSING);
+                        if (amountInput) {
+                            this.simulateTyping(amountInput, selectedProduct.amount);
+                            amountInput.focus();
+                            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                            amountInput.dispatchEvent(changeEvent);
                         }
-                    }, TIMEOUTS.ROW_PROCESSING);
-                }, TIMEOUTS.ROW_PROCESSING);
-            }
+
+                        // If there's extra, add a new row after processing main amount
+                        if (selectedProduct.extra > 0) {
+                            setTimeout(() => {
+                                if (addButton) {
+                                    addButton.click();
+                                }
+
+                                inputIndex++;
+
+                                setTimeout(() => {
+                                    const newRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
+                                    const newProductInput = document.evaluate(`${newRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                                    const newAmountInput = document.evaluate(`${newRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                                    const newPriceInput = document.evaluate(`${newRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                                    if (newProductInput && newAmountInput && newPriceInput) {
+                                        this.simulateTyping(newProductInput, selectedProduct.product);
+                                        this.selectFirstDropdownOption(newProductInput);
+                                        updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
+
+                                        setTimeout(() => {
+                                            this.simulateTyping(newAmountInput, selectedProduct.extra);
+                                            newAmountInput.focus();
+                                            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                            newAmountInput.dispatchEvent(changeEvent);
+
+                                            this.simulateTyping(newPriceInput, 0);
+                                            newPriceInput.focus();
+                                            const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                            newPriceInput.dispatchEvent(priceChangeEvent);
+
+                                            selectedProductIndex++;
+                                            setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                                        }, this.TIMEOUTS.ROW_PROCESSING);
+                                    }
+                                }, this.TIMEOUTS.ROW_PROCESSING);
+                            }, this.TIMEOUTS.ROW_PROCESSING);
+                        } else {
+                            selectedProductIndex++;
+                            setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                        }
+                    }, this.TIMEOUTS.ROW_PROCESSING);
+                }
+                // Process only extra if amount is 0 but extra > 0
+                else if (selectedProduct.extra > 0) {
+                    this.simulateTyping(productInput, selectedProduct.product);
+                    this.selectFirstDropdownOption(productInput);
+                    updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
+
+                    setTimeout(() => {
+                        if (amountInput) {
+                            this.simulateTyping(amountInput, selectedProduct.extra);
+                            amountInput.focus();
+                            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                            amountInput.dispatchEvent(changeEvent);
+                        }
+
+                        if (priceInput) {
+                            this.simulateTyping(priceInput, 0);
+                            priceInput.focus();
+                            const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
+                            priceInput.dispatchEvent(priceChangeEvent);
+                        }
+
+                        selectedProductIndex++;
+                        setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                    }, this.TIMEOUTS.ROW_PROCESSING);
+                }
+            };
 
             processNextInput();
         } catch (error) {
-            showLoading(false);
-            showNotification(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
+            this.showLoading(false);
+            this.showNotification(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
             console.error('Error processing products:', error);
         }
-    });
+    }
 
-    // Initialize product list display
-    displayProductList();
-    onUrlChange();
-})();
+    settingTimeout() {
+        GM_addStyle(`
+        #timeout-save:before {
+            content: "🖫 ";
+            font-size: 1.3em;
+        }
+        #timeout-reset:before {
+            content: "↻ ";
+            font-size: 1.35em;
+        }
+        .timeout-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease-out, background-color 0.3s ease-out;
+            backdrop-filter: blur(0px);
+        }
+        .timeout-overlay.active {
+            background-color: rgba(0,0,0,0.5);
+            opacity: 1;
+            pointer-events: all;
+            backdrop-filter: blur(3px);
+        }
+        .timeout-container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s ease-out 0.1s;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .timeout-overlay.active .timeout-container {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .timeout-title {
+            margin-bottom: 20px;
+            font-size: 24px;
+            color: #333;
+        }
+        .timeout-input-container {
+            margin-bottom: 15px;
+        }
+        .timeout-label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 16px;
+            color: #555;
+        }
+        .timeout-input {
+            padding: 10px;
+            width: 100%;
+            max-width: 250px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+        }
+        .timeout-input:focus {
+            outline: none;
+            border-color: #3CAEDA;
+            box-shadow: 0 0 0 2px rgba(60, 174, 218, 0.2);
+        }
+        .timeout-button-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .timeout-button {
+            padding: 12px 25px;
+            font-size: 18px;
+            background-color: #3CAEDA;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .timeout-button:hover {
+            background-color: #2887B6;
+            transform: translateY(-1px);
+        }
+        .timeout-button:active {
+            transform: translateY(0);
+        }
+    `);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'timeout-overlay';
+        document.body.appendChild(overlay);
+
+        const container = document.createElement('div');
+        container.className = 'timeout-container';
+        overlay.appendChild(container);
+
+        const title = document.createElement('h3');
+        title.className = 'timeout-title';
+        title.innerText = 'ตั้งค่าหน่วงเวลา';
+        container.appendChild(title);
+
+        const createInput = (label, value, name) => {
+            const inputContainer = document.createElement('div');
+            inputContainer.className = 'timeout-input-container';
+            container.appendChild(inputContainer);
+
+            const labelEl = document.createElement('label');
+            labelEl.className = 'timeout-label';
+            labelEl.innerText = label;
+            inputContainer.appendChild(labelEl);
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'timeout-input';
+            input.value = value;
+            input.name = name;
+
+            input.addEventListener('input', () => {
+                this.TIMEOUTS[name] = input.value;
+            });
+
+            inputContainer.appendChild(input);
+        };
+
+        createInput('เวลา เลือกรายการ (มิลลิวินาที)', this.TIMEOUTS.DROPDOWN, 'DROPDOWN');
+        createInput('เวลา ใส่จำนวน (มิลลิวินาที)', this.TIMEOUTS.ROW_PROCESSING, 'ROW_PROCESSING');
+        createInput('เวลา เริ่มรายการถัดไป (มิลลิวินาที)', this.TIMEOUTS.NEXT_ITEM, 'NEXT_ITEM');
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'timeout-button-container';
+        container.appendChild(buttonContainer);
+
+        const saveButton = document.createElement('button');
+        saveButton.id = 'timeout-save';
+        saveButton.className = 'timeout-button';
+        saveButton.innerText = 'บันทึก';
+
+        const resetButton = document.createElement('button');
+        resetButton.id = 'timeout-reset';
+        resetButton.className = 'timeout-button';
+        resetButton.innerText = 'คืนค่าเริ่มต้น';
+
+        const closeOverlay = () => {
+            overlay.classList.remove('active');
+            setTimeout(() => {
+                overlay.remove();
+                this.showPopup();
+            }, 200);
+        };
+
+        saveButton.addEventListener('click', () => {
+            let dropdown = parseInt(this.TIMEOUTS.DROPDOWN);
+            let rowProcessing = parseInt(this.TIMEOUTS.ROW_PROCESSING);
+
+            if (rowProcessing - dropdown < 100) {
+                dropdown = rowProcessing - 100;
+                this.TIMEOUTS.DROPDOWN = dropdown;
+                document.querySelector('input[name="DROPDOWN"]').value = dropdown;
+                this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
+                return;
+            }
+
+            if (dropdown > rowProcessing) {
+                rowProcessing = dropdown + 100;
+                this.TIMEOUTS.ROW_PROCESSING = rowProcessing;
+                document.querySelector('input[name="ROW_PROCESSING"]').value = rowProcessing;
+                this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
+                return;
+            }
+
+            GM_setValue('dropdownTimeout', this.TIMEOUTS.DROPDOWN);
+            GM_setValue('rowProcessingTimeout', this.TIMEOUTS.ROW_PROCESSING);
+            GM_setValue('nextItemTimeout', this.TIMEOUTS.NEXT_ITEM);
+            closeOverlay();
+        });
+
+        resetButton.addEventListener('click', () => {
+            this.TIMEOUTS.DROPDOWN = this.DEFAULT_TIMEOUTS.DROPDOWN;
+            this.TIMEOUTS.ROW_PROCESSING = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
+            this.TIMEOUTS.NEXT_ITEM = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
+
+            document.querySelector('input[name="DROPDOWN"]').value = this.DEFAULT_TIMEOUTS.DROPDOWN;
+            document.querySelector('input[name="ROW_PROCESSING"]').value = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
+            document.querySelector('input[name="NEXT_ITEM"]').value = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
+
+            GM_setValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN);
+            GM_setValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING);
+            GM_setValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeOverlay();
+            }
+        });
+
+        buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(resetButton);
+
+        setTimeout(() => {
+            overlay.classList.add('active');
+        }, 10);
+    }
+}
+
+// Initialize the script
+new FlowAccountMenu();
