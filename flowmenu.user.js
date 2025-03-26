@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  Displays a list of products in Flow Account
+// @version      1.6
+// @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
 // @grant        GM_addStyle
@@ -20,9 +20,9 @@ class FlowAccountMenu {
     constructor() {
         this.PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
         this.DEFAULT_TIMEOUTS = {
-            DROPDOWN: 500,
+            DROPDOWN: 600,
             ROW_PROCESSING: 700,
-            NEXT_ITEM: 50,
+            NEXT_ITEM: 100,
         };
         this.TIMEOUTS = {
             DROPDOWN: GM_getValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN),
@@ -60,23 +60,30 @@ class FlowAccountMenu {
                 z-index: 9999;
                 display: none;
                 width: 700px;
-                height: 800px;
-                overflow-y: auto;
+                overflow: hidden;
             }
             #options-table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-bottom: 10px;
+                margin-bottom: 18%;
             }
             #options-table th, #options-table td {
                 padding: 8px;
                 border-bottom: 1px solid #ddd;
                 font-size: 1em;
             }
+            #options-table thead {
+                position: sticky;
+                top: 0;
+                background-color: white;
+                z-index: 10;
+            }
             #options-table th {
                 background-color: #3CAEDA;
                 color: white;
                 text-align: center;
+                padding: 10px;
+                border-bottom: 2px solid #ddd;
             }
             .amount-input, .extra-input {
                 width: 65px;
@@ -269,14 +276,6 @@ class FlowAccountMenu {
                 content: "↻ ";
                 font-size: 1.35em;
             }
-            .modern-button-primary:before{
-                content: "🖫 ";
-                font-size: 1.3em;
-            }
-            .modern-button-secondary:before{
-                content: "✖ ";
-                font-size: 1.1em;
-            }
             #select-popup {
 				display: none;
 				opacity: 0;
@@ -293,28 +292,50 @@ class FlowAccountMenu {
 				left: 50%;
 				transform: translate(-50%, -50%) translateY(0);
 			}
+            #search-box{
+               border-radius: 5px;
+               border: 1px solid #808080;
+               padding: 5px 5px;
+            }
+            #search-box:focus{
+               border: 1px solid #2898CB;
+               box-shadow: 0 0 2px #2898CB;
+            }
+            #imgHeader{
+               display: inline-block;
+               float:left;
+               color: #3CAEDA;
+            }
+            #imgHeader img{
+               width: 250px;
+            }
         `);
     }
 
     initPopup() {
         this.popup = document.createElement('div');
         this.popup.id = 'select-popup';
-        this.popup.style.height = '80vh';
+        this.popup.style.height = '85vh';
         this.popup.innerHTML = `
-        <div class="center">รายการสินค้า</div>
-        <table id="options-table">
-            <thead>
-                <tr>
-                    <th>ลำดับ</th>
-                    <th>สินค้า</th>
-                    <th>จำนวน</th>
-                    <th>แถม</th>
-                </tr>
-            </thead>
-            <tbody id="options-list"></tbody>
-        </table>
+        <div style="text-align: right; margin-bottom: 10px;">
+            <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
+            <input type="text" id="search-box" placeholder="ค้นหา" onkeyup="filterTable() onclick="this.select()" />
+        </div>
+        <div style="max-height: 75vh; overflow-y: auto;">
+          <table id="options-table">
+              <thead>
+                  <tr>
+                      <th>ลำดับ</th>
+                      <th>สินค้า</th>
+                      <th>จำนวน</th>
+                      <th>แถม</th>
+                  </tr>
+              </thead>
+              <tbody id="options-list"></tbody>
+          </table>
+        </div>
         <div id="controls-container">
-            <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | เลือก: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
+            <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | ขาย: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
             <button id="submit-selections">ยืนยัน</button>
             <button id="clear-amount">ล้างจำนวน</button>
             <div class="dropdown">
@@ -329,9 +350,14 @@ class FlowAccountMenu {
     `;
         document.body.appendChild(this.popup);
 
-        // Event listeners for popup
+        document.getElementById('search-box').addEventListener('keyup', this.filterTable);
+
+        document.getElementById('search-box').onclick = function() {
+            this.select();
+        };
+
         document.getElementById('close-popup').addEventListener('click', () => {
-            this.hidePopup(); // Use hidePopup to animate the closing
+            this.hidePopup();
         });
 
         document.getElementById('clear-amount').addEventListener('click', () => {
@@ -342,7 +368,6 @@ class FlowAccountMenu {
             this.processSelectedProducts();
         });
 
-        // Dropdown menu events
         document.getElementById('menu-add-product')?.addEventListener('click', () => {
             this.hidePopup();
             this.openTextAreaPopup();
@@ -353,7 +378,6 @@ class FlowAccountMenu {
             this.hidePopup();
         });
 
-        // Input event delegation
         document.body.addEventListener("input", (event) => {
             if (event.target.matches(".amount-input, .extra-input")) {
                 this.updateSelectedCount();
@@ -364,6 +388,8 @@ class FlowAccountMenu {
         document.body.addEventListener("focus", (event) => {
             if (event.target.matches(".amount-input, .extra-input") && event.target.value == 0) {
                 event.target.value = '';
+            }else{
+                event.target.select();
             }
         }, true);
 
@@ -374,7 +400,6 @@ class FlowAccountMenu {
             }
         }, true);
 
-        // Keyboard navigation
         document.addEventListener('keydown', (event) => {
             const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
             const currentIndex = inputs.indexOf(document.activeElement);
@@ -411,20 +436,51 @@ class FlowAccountMenu {
         });
     }
 
+    filterTable() {
+        const searchQuery = document.getElementById('search-box').value.toLowerCase();
+        const searchParts = searchQuery.split(' ').filter(part => part.trim() !== ''); // Split search by space and filter out empty parts
+        const rows = document.querySelectorAll('#options-table tbody tr');
+        let rowNumber = 1; // Start the row number from 1
+
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+
+            // Get the value from the "สินค้า" column (2nd column, product name + quantity)
+            const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
+
+            // Check if all search terms match the full product name (สินค้า)
+            const matches = searchParts.every(part => productName.includes(part));
+
+            if (matches) {
+                row.style.display = ''; // Show the row
+                cells[0].textContent = rowNumber; // Update the "ลำดับ" (first column)
+                rowNumber++; // Increment the row number for the next visible row
+            } else {
+                row.style.display = 'none'; // Hide the row
+            }
+        });
+    }
+
+
+    clearSearch(){
+        document.getElementById('search-box').value = '';
+        this.filterTable();
+    }
+
     showPopup() {
-        this.popup.style.display = 'block'; // Make it visible first
+        this.popup.style.display = 'block';
         setTimeout(() => {
-            this.popup.classList.add('visible'); // Start the animation
-        }, 10); // Small delay for the transition to work
+            this.popup.classList.add('visible');
+        }, 10);
     }
 
     hidePopup() {
-        this.popup.classList.remove('visible'); // Trigger the hide animation
+        this.popup.classList.remove('visible');
 
-        // After the animation duration, hide the popup
+
         setTimeout(() => {
-            this.popup.style.display = 'none'; // Actually hide it
-        }, 500); // Match the duration of the transition
+            this.popup.style.display = 'none';
+        }, 500);
     }
 
     initOpenButton() {
@@ -487,6 +543,7 @@ class FlowAccountMenu {
             this.lastUrl = location.href;
             if(this.PATHS.some(path => location.href.includes(path))) {
                 this.clearAmountInputs();
+                this.clearSearch();
             } else {
               if(this.openPopupButton.style.display !== 'none') this.openPopupButton.style.display = 'none';
             }
@@ -624,7 +681,7 @@ class FlowAccountMenu {
     updateSelectedCount() {
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
-        let selectedCount = 0;
+        let saleCount = 0;
         let totalItems = 0;
         let allItems = 0;
         let extraCount = 0;
@@ -635,16 +692,18 @@ class FlowAccountMenu {
             allItems++;
 
             if (amountValue > 0 || extraValue > 0) {
-                selectedCount++;
                 totalItems += amountValue + extraValue;
                 if (extraValue > 0) {
                     extraCount++;
+                }
+                if (amountValue > 0) {
+                    saleCount++;
                 }
             }
         });
 
         document.getElementById('selected-count').innerText =
-            `สินค้าทั้งหมด: ${allItems} รายการ | เลือก: ${selectedCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
+            `สินค้าทั้งหมด: ${allItems} รายการ | ขาย: ${saleCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
     }
 
     openTextAreaPopup() {
@@ -741,9 +800,14 @@ class FlowAccountMenu {
             color: white;
         }
 
+        .modern-button-third {
+            background-color: #2898CB;
+            color: white;
+        }
+
         .modern-button-secondary {
-            background-color: #f0f0f0;
-            color: #555;
+            background-color: #2898CB;
+            color: white;
         }
 
         .modern-button-primary:hover {
@@ -751,8 +815,13 @@ class FlowAccountMenu {
             transform: translateY(-1px);
         }
 
+        .modern-button-third:hover {
+            background-color: #1e7ba8;
+            transform: translateY(-1px);
+        }
+
         .modern-button-secondary:hover {
-            background-color: #e0e0e0;
+            background-color: #1e7ba8;
             transform: translateY(-1px);
         }
 
@@ -775,6 +844,31 @@ class FlowAccountMenu {
                 transform: translateY(0);
             }
         }
+		.modern-button-primary:before{
+			content: "🖫 ";
+			font-size: 1.3em;
+		}
+		.modern-button-third:before{
+			content: "✎ ";
+			font-size: 1.2em;
+		}
+		.modern-button-secondary:before{
+			content: "✖ ";
+			font-size: 1.2em;
+		}
+        #txt-area{
+           background-color: #e9e9e9;
+        }
+        #txt-header{
+           font-size: 2em;
+           text-align: center;
+           vertical-align: middle;
+           line-height: 50px;
+           background-color: #2898CB;
+           color: white;
+           height: 50px;
+           margin-bottom: 5px;
+        }
     `);
 
         // Create overlay
@@ -787,11 +881,18 @@ class FlowAccountMenu {
         container.className = 'modern-container';
         overlay.appendChild(container);
 
+        const txtHeader = document.createElement('div');
+        txtHeader.id = 'txt-header';
+        txtHeader.innerHTML = 'รายการสินค้า';
+        container.appendChild(txtHeader);
+
         // Create textarea
         const textArea = document.createElement('textarea');
         textArea.className = 'modern-textarea';
+        textArea.id = 'txt-area';
         textArea.value = this.productList.join('\n');
         textArea.placeholder = "ใส่รายการสินค้า, บรรทัดละ 1 รายการ...";
+        textArea.setAttribute("disabled", true);
         container.appendChild(textArea);
 
         // Create button container
@@ -818,6 +919,14 @@ class FlowAccountMenu {
             closeOverlay();
         });
 
+        const editButton = document.createElement('button');
+        editButton.className = 'modern-button modern-button-third';
+        editButton.textContent = 'แก้ไข';
+        editButton.addEventListener('click', () => {
+            textArea.disabled = false
+            textArea.style.backgroundColor = 'white';
+        });
+
         // Create close button
         const closeButton = document.createElement('button');
         closeButton.className = 'modern-button modern-button-secondary';
@@ -825,8 +934,9 @@ class FlowAccountMenu {
         closeButton.addEventListener('click', closeOverlay);
 
         // Add buttons to container
-        buttonContainer.appendChild(closeButton);
         buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(editButton);
+        buttonContainer.appendChild(closeButton);
         container.appendChild(buttonContainer);
         this.hidePopup();
 
@@ -888,6 +998,7 @@ class FlowAccountMenu {
                 return;
             }
 
+            this.clearSearch();
             this.hidePopup();
             let inputIndex = 1;
             let itemInProcess = 1;
