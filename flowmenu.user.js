@@ -814,6 +814,7 @@ class FlowAccountMenu {
             this.productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
             GM_setValue('productList', this.productList);
             this.showNotification('บันทึกรายการสินค้าเรียบร้อยแล้ว', 'success');
+            this.displayProductList();
             closeOverlay();
         });
 
