@@ -484,11 +484,17 @@ class FlowAccountMenu {
                height: 50px;
                margin-bottom: 5px;
             }
-            .text-disabled {
+            textarea:disabled {
                 background-color: #f9f9f9;
                 color: grey;
                 cursor: not-allowed;
+                pointer-events: none;
                 overflow: hidden;
+            }
+            button:disabled{
+               cursor: not-allowed;
+               pointer-events: none;
+               opacity: 0.6;
             }
 
 /*-----------------*/
@@ -1002,7 +1008,7 @@ class FlowAccountMenu {
 
         // Create textarea
         const textArea = document.createElement('textarea');
-        textArea.className = 'setting-product-textarea text-disabled';
+        textArea.className = 'setting-product-textarea';
         textArea.value = this.productList.join('\n');
         textArea.placeholder = "ใส่รายการสินค้า, บรรทัดละ 1 รายการ...";
         textArea.disabled = true;
@@ -1024,6 +1030,7 @@ class FlowAccountMenu {
         const saveButton = document.createElement('button');
         saveButton.className = 'setting-product-button button-primary';
         saveButton.textContent = 'บันทึก';
+        saveButton.disabled = true;
         saveButton.addEventListener('click', () => {
             this.productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
             GM_setValue('productList', this.productList);
@@ -1038,7 +1045,8 @@ class FlowAccountMenu {
         editButton.textContent = 'แก้ไข';
         editButton.addEventListener('click', () => {
             textArea.disabled = false;
-            textArea.classList.remove("text-disabled");
+            saveButton.disabled = false;
+            editButton.disabled = true;
         });
 
         const closeButton = document.createElement('button');
