@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.61
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
 // @grant        GM_addStyle
-// @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -34,12 +33,21 @@ class FlowAccountMenu {
 
         this.buttonOpen = {
             targetXPath: '//*[@id="documentHeader"]/div/div[2]',
-            buttonId: 'openPopupButton',
+            buttonId: 'openAppButton',
             buttonText: 'รายการสินค้า'
         };
 
+        this.buttonColor = {
+            default: '',
+            primary:'',
+            success: '',
+            info: '',
+            warning: '',
+            danger: ''
+        };
+
         this.initStyles();
-        this.initPopup();
+        this.initApplication();
         this.initOpenButton();
         this.setupObservers();
         this.registerMenuCommands();
@@ -48,8 +56,13 @@ class FlowAccountMenu {
 
     initStyles() {
         GM_addStyle(`
+
+/*--------------------*/
+/*      MAIN PAGE     */
+/*--------------------*/
+
             html { font-size: 100%; }
-            #select-popup {
+            #app-container {
                 position: fixed;
                 top: 50%;
                 left: 50%;
@@ -62,23 +75,23 @@ class FlowAccountMenu {
                 width: 700px;
                 overflow: hidden;
             }
-            #options-table {
+            #product-list-table {
                 width: 100%;
                 border-collapse: collapse;
                 margin-bottom: 18%;
             }
-            #options-table th, #options-table td {
+            #product-list-table th, #product-list-table td {
                 padding: 8px;
                 border-bottom: 1px solid #ddd;
                 font-size: 1em;
             }
-            #options-table thead {
+            #product-list-table thead {
                 position: sticky;
                 top: 0;
                 background-color: white;
                 z-index: 10;
             }
-            #options-table th {
+            #product-list-table th {
                 background-color: #3CAEDA;
                 color: white;
                 text-align: center;
@@ -100,40 +113,48 @@ class FlowAccountMenu {
                 position: sticky;
                 bottom: 0;
                 background: white;
-                padding: 10px 0;
+                padding: 10px;
                 border-top: 1px solid #ccc;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                text-align: left;
             }
-            #buttons-container {
-                position: sticky;
-                bottom: 0;
-                background: white;
-                padding: 20px 0;
-                border-top: 1px solid #ccc;
+
+            .button-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+            }
+            .button-group {
+                display: flex;
+                gap: 10px;
             }
             #selected-count {
-                margin-bottom: 10px;
-                font-weight: bold;
+                width: 100%;
                 font-size: 0.9em;
+                font-weight: bold;
                 color: #333;
+                padding-bottom: 5px;
             }
-            #submit-selections, #clear-amount, #close-popup, #setting-list {
+            .main-menu-button {
                 padding: 9px 20px;
-                margin-right: 2px;
                 font-size: 1em;
                 cursor: pointer;
                 color: white;
                 border: none;
                 border-radius: 5px;
                 background-color: #2898CB;
+                transition: all 0.2s ease;
             }
-            #submit-selections:hover,#close-popup:hover,#clear-amount:hover,#setting-list:hover {
+            .main-menu-button:hover {
                 background-color: #2887B6;
+                transform: translateY(-1px);
             }
-            #close-popup {
-                position: absolute;
-                right: 0px;
-            }
-            #openPopupButton {
+
+            #openAppButton {
                 z-index: 99999;
                 margin-left: 8px;
                 padding: 10px 30px;
@@ -145,9 +166,10 @@ class FlowAccountMenu {
                 font-size: 1em;
                 transition: all 0.3s;
             }
-            #openPopupButton:hover {
+            #openAppButton:hover {
                 color: white;
                 background-color: #74AC18;
+                transform: translateY(-1px);
             }
             .center{
                 height: 30px;
@@ -201,8 +223,11 @@ class FlowAccountMenu {
                 transition: opacity 0.3s ease-in-out;
             }
             .notification.success {
-                background: #3CAEDA;
+                background: #5CB85C;
+                top: 5%;
+                transform: translate(-50%, -50%);
             }
+
             #empty-product{
                 font-weight: bold;
                 color: red;
@@ -212,8 +237,7 @@ class FlowAccountMenu {
                 text-align: center;
             }
             .dropdown {
-                position: absolute;
-                right: 84px;
+                position: relative;
                 display: inline-block;
             }
             .dropdown-content {
@@ -241,11 +265,6 @@ class FlowAccountMenu {
             }
             .dropdown:hover .dropdown-content {
                 display: block;
-            }
-
-            #setting-list {
-                position: relative;
-                padding: 8.5px 20px;
             }
 
             #menu-delay-settings:before{
@@ -276,7 +295,7 @@ class FlowAccountMenu {
                 content: "↻ ";
                 font-size: 1.35em;
             }
-            #select-popup {
+            #app-container {
 				display: none;
 				opacity: 0;
 				top: 50%;
@@ -285,7 +304,7 @@ class FlowAccountMenu {
 				transition: opacity 0.25s ease, transform 0.3s ease;
 			}
 
-			#select-popup.visible {
+			#app-container.visible {
 				display: block;
 				opacity: 1;
 				top: 50%;
@@ -301,54 +320,310 @@ class FlowAccountMenu {
                border: 1px solid #2898CB;
                box-shadow: 0 0 2px #2898CB;
             }
+
+/*--------------------*/
+/*     LOGO HEADER    */
+/*--------------------*/
+
             #imgHeader{
                display: inline-block;
                float:left;
-               color: #3CAEDA;
             }
             #imgHeader img{
                width: 250px;
             }
+
+/*---------------------*/
+/* OVERLAY BLACKGROUND */
+/*---------------------*/
+
+            .overlay {
+               position: fixed;
+               top: 0;
+               left: 0;
+               width: 100%;
+               height: 100%;
+               background-color: rgba(0,0,0,0);
+               z-index: 99999;
+               display: flex;
+               align-items: center;
+               justify-content: center;
+               opacity: 0;
+               pointer-events: none;
+               transition: opacity 0.3s ease-out, background-color 0.3s ease-out;
+               backdrop-filter: blur(0px);
+            }
+            .overlay.active {
+                background-color: rgba(0,0,0,0.7);
+                opacity: 1;
+                pointer-events: all;
+                backdrop-filter: blur(5px);
+            }
+            .overlay.active .setting-product-container {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            .overlay.active .timeout-container {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+
+            @keyframes slideUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+/*-----------------*/
+/* SETTING PRODUCT */
+/*-----------------*/
+
+            .setting-product-container {
+                background-color: #ffffff;
+                padding: 2rem;
+                border-radius: 12px;
+                width: min(90vw, 800px);
+                max-height: 90vh;
+                text-align: center;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+                display: flex;
+                flex-direction: column;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                transform: translateY(20px);
+                opacity: 0;
+                transition: all 0.3s ease-out 0.1s;
+            }
+
+            .setting-product-textarea {
+                width: 100%;
+                height: 65vh;
+                font-size: 14px;
+                margin-bottom: 1.5rem;
+                padding: 1rem;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                resize: none;
+                line-height: 1.5;
+                background: #white;
+                color: black;
+                transition: all 0.2s ease;
+                box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .setting-product-textarea:focus {
+                outline: none;
+                border-color: #2898CB;
+                box-shadow: 0 0 0 2px rgba(40, 152, 203, 0.2);
+            }
+            .setting-product-button-container {
+                display: flex;
+                justify-content: flex-end;
+                gap: 12px;
+            }
+            .setting-product-button {
+                padding: 0.75rem 1.75rem;
+                border-radius: 8px;
+                font-size: 0.95rem;
+                font-weight: 500;
+                border: none;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .button-primary {
+                background-color: #2898CB;
+                color: white;
+            }
+            .button-secondary {
+                background-color: #2898CB;
+                color: white;
+            }
+
+            .button-primary:hover {
+                background-color: #1e7ba8;
+                transform: translateY(-1px);
+            }
+
+            .button-secondary:hover {
+                background-color: #1e7ba8;
+                transform: translateY(-1px);
+            }
+
+            .setting-product-button:active {
+                transform: translateY(0);
+            }
+		    .button-primary:before{
+		    	content: "🖫 ";
+		    	font-size: 1.3em;
+		    }
+		    #product-edit:before{
+		    	content: "✎ ";
+		    	font-size: 1.2em;
+		    }
+		    .button-secondary:before{
+		    	content: "✖ ";
+		    	font-size: 1.2em;
+		    }
+            #txt-header{
+               font-size: 2em;
+               text-align: center;
+               vertical-align: middle;
+               line-height: 50px;
+               background-color: #2898CB;
+               color: white;
+               height: 50px;
+               margin-bottom: 5px;
+            }
+            .text-disabled {
+                background-color: #f9f9f9;
+                color: grey;
+                cursor: not-allowed;
+                overflow: hidden;
+            }
+
+/*-----------------*/
+/* SETTING TIMEOUT */
+/*-----------------*/
+
+            #timeout-save:before {
+                content: "🖫 ";
+                font-size: 1.3em;
+            }
+            #timeout-cancel:before {
+                content: "✖ ";
+                font-size: 1.3em;
+            }
+            #timeout-reset:before {
+                content: "↻ ";
+                font-size: 1.35em;
+            }
+            .timeout-container {
+                background-color: #fff;
+                padding: 30px;
+                border-radius: 10px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+                transform: translateY(20px);
+                opacity: 0;
+                transition: all 0.3s ease-out 0.1s;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            .timeout-title {
+                margin-bottom: 20px;
+                font-size: 24px;
+                color: #333;
+            }
+            .timeout-input-container {
+                width: 100%;
+                margin-bottom: 15px;
+            }
+            .timeout-label {
+                display: block;
+                margin-bottom: 5px;
+                font-size: 16px;
+                color: #555;
+            }
+            .timeout-input {
+                padding: 10px;
+                width: 80%;
+                font-size: 16px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                box-sizing: border-box;
+                margin-bottom: 10px;
+                transition: all 0.2s ease;
+                text-align: center;
+            }
+            .timeout-input:focus {
+                outline: none;
+                border-color: #3CAEDA;
+                box-shadow: 0 0 0 2px rgba(60, 174, 218, 0.2);
+            }
+            .timeout-button-container {
+                margin-top: 20px;
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+            }
+            .timeout-button {
+                padding: 10px 25px;
+                font-size: 1em;
+                background-color: #3CAEDA;
+                color: #fff;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+            .timeout-button:hover {
+                background-color: #2887B6;
+                transform: translateY(-1px);
+            }
+            .timeout-button:active {
+                transform: translateY(0);
+            }
         `);
     }
 
-    initPopup() {
-        this.popup = document.createElement('div');
-        this.popup.id = 'select-popup';
-        this.popup.style.height = '85vh';
-        this.popup.innerHTML = `
-        <div style="text-align: right; margin-bottom: 10px;">
-            <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
-            <input type="text" id="search-box" placeholder="ค้นหา" onkeyup="filterTable() onclick="this.select()" />
-        </div>
-        <div style="max-height: 75vh; overflow-y: auto;">
-          <table id="options-table">
-              <thead>
-                  <tr>
-                      <th>ลำดับ</th>
-                      <th>สินค้า</th>
-                      <th>จำนวน</th>
-                      <th>แถม</th>
-                  </tr>
-              </thead>
-              <tbody id="options-list"></tbody>
-          </table>
-        </div>
-        <div id="controls-container">
-            <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | ขาย: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
-            <button id="submit-selections">ยืนยัน</button>
-            <button id="clear-amount">ล้างจำนวน</button>
-            <div class="dropdown">
-                <button id="setting-list">ตั้งค่า</button>
-                <div class="dropdown-content">
-                    <a id="menu-add-product">รายการสินค้า</a>
-                    <a id="menu-delay-settings">ตั้งค่าหน่วงเวลา</a>
-                </div>
-            </div>
-            <button id="close-popup">ปิด</button>
-        </div>
-    `;
-        document.body.appendChild(this.popup);
+    initApplication() {
+        this.app = document.createElement('div');
+        this.app.id = 'app-container';
+        this.app.style.height = '85vh';
+        this.app.innerHTML = `
+          <div style="text-align: right; margin-bottom: 10px;">
+              <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
+              <input type="text" id="search-box" placeholder="ค้นหา" onkeyup="filterTable() onclick="this.select()" />
+          </div>
+          <div style="max-height: 75vh; overflow-y: auto;">
+            <table id="product-list-table">
+                <thead>
+                    <tr>
+                        <th>ลำดับ</th>
+                        <th>สินค้า</th>
+                        <th>จำนวน</th>
+                        <th>แถม</th>
+                    </tr>
+                </thead>
+                <tbody id="options-list"></tbody>
+            </table>
+          </div>
+          <div id="controls-container">
+              <!-- Selected count on top -->
+              <div id="selected-count">สินค้าทั้งหมด: 0 รายการ | ขาย: 0 รายการ | แถม: 0 รายการ | ทั้งหมด: 0 ชิ้น</div>
+              <!-- Button row below -->
+              <div class="button-row">
+                  <!-- Left buttons -->
+                  <div class="button-group">
+                      <button class="main-menu-button" id="submit-selections">ยืนยัน</button>
+                      <button class="main-menu-button" id="clear-amount">ล้างจำนวน</button>
+                  </div>
+                  <!-- Right buttons -->
+                  <div class="button-group">
+                      <div class="dropdown">
+                          <button class="main-menu-button" id="setting-list">ตั้งค่า</button>
+                          <div class="dropdown-content">
+                              <a id="menu-delay-settings">ตั้งค่าหน่วงเวลา</a>
+                              <a id="menu-add-product">รายการสินค้า</a>
+                          </div>
+                      </div>
+                      <button class="main-menu-button" id="close-app">ปิด</button>
+                  </div>
+              </div>
+          </div>
+        `;
+        document.body.appendChild(this.app);
 
         document.getElementById('search-box').addEventListener('keyup', this.filterTable);
 
@@ -356,8 +631,8 @@ class FlowAccountMenu {
             this.select();
         };
 
-        document.getElementById('close-popup').addEventListener('click', () => {
-            this.hidePopup();
+        document.getElementById('close-app').addEventListener('click', () => {
+            this.hide();
         });
 
         document.getElementById('clear-amount').addEventListener('click', () => {
@@ -369,13 +644,13 @@ class FlowAccountMenu {
         });
 
         document.getElementById('menu-add-product')?.addEventListener('click', () => {
-            this.hidePopup();
-            this.openTextAreaPopup();
+            this.hide();
+            this.settingProduct();
         });
 
         document.getElementById('menu-delay-settings')?.addEventListener('click', () => {
             this.settingTimeout();
-            this.hidePopup();
+            this.hide();
         });
 
         document.body.addEventListener("input", (event) => {
@@ -386,10 +661,15 @@ class FlowAccountMenu {
         }, true);
 
         document.body.addEventListener("focus", (event) => {
-            if (event.target.matches(".amount-input, .extra-input") && event.target.value == 0) {
-                event.target.value = '';
-            }else{
-                event.target.select();
+            if (event.target.matches(".amount-input, .extra-input") && event.target instanceof HTMLInputElement) {
+                // Clear value if it's exactly 0
+                if (parseFloat(event.target.value) === 0) {
+                    event.target.value = '';
+                }
+                // Select text if value > 0
+                else if (parseFloat(event.target.value) > 0) {
+                    event.target.select();
+                }
             }
         }, true);
 
@@ -439,7 +719,7 @@ class FlowAccountMenu {
     filterTable() {
         const searchQuery = document.getElementById('search-box').value.toLowerCase();
         const searchParts = searchQuery.split(' ').filter(part => part.trim() !== ''); // Split search by space and filter out empty parts
-        const rows = document.querySelectorAll('#options-table tbody tr');
+        const rows = document.querySelectorAll('#product-list-table tbody tr');
         let rowNumber = 1; // Start the row number from 1
 
         rows.forEach(row => {
@@ -467,32 +747,30 @@ class FlowAccountMenu {
         this.filterTable();
     }
 
-    showPopup() {
-        this.popup.style.display = 'block';
+    show() {
+        this.app.style.display = 'block';
         setTimeout(() => {
-            this.popup.classList.add('visible');
+            this.app.classList.add('visible');
         }, 10);
     }
 
-    hidePopup() {
-        this.popup.classList.remove('visible');
-
-
+    hide() {
+        this.app.classList.remove('visible');
         setTimeout(() => {
-            this.popup.style.display = 'none';
+            this.app.style.display = 'none';
         }, 500);
     }
 
     initOpenButton() {
         // Create the button element
-        this.openPopupButton = document.createElement('button');
-        this.openPopupButton.id = this.buttonOpen.buttonId;
-        this.openPopupButton.innerText = this.buttonOpen.buttonText;
+        this.openAppButton = document.createElement('button');
+        this.openAppButton.id = this.buttonOpen.buttonId;
+        this.openAppButton.innerText = this.buttonOpen.buttonText;
 
             // Add click handler
-        this.openPopupButton.addEventListener('click', () => {
-            if (this.popup) {
-                this.showPopup();
+        this.openAppButton.addEventListener('click', () => {
+            if (this.app) {
+                this.show();
                 this.updateSelectedCount();
             }
         });
@@ -515,8 +793,8 @@ class FlowAccountMenu {
         if (target) {
             // Check if button does not exist
             if (!document.getElementById(this.buttonOpen.buttonId)) {
-                target.insertBefore(this.openPopupButton,target.firstChild);
-                this.openPopupButton.style.display = 'inline-block';
+                target.insertBefore(this.openAppButton,target.firstChild);
+                this.openAppButton.style.display = 'inline-block';
             }
         } else if (attempt < maxAttempts) {
             setTimeout(() => this.injectButtonWithRetry(attempt + 1), retryDelay);
@@ -526,7 +804,7 @@ class FlowAccountMenu {
     setupObservers() {
         const observer = new MutationObserver((mutations) => {
 
-            if (!document.getElementById(this.buttonOpen.buttonId) && this.openPopupButton) {
+            if (!document.getElementById(this.buttonOpen.buttonId) && this.openAppButton) {
                 this.injectButtonWithRetry();
                 this.includeURL();
             }
@@ -545,13 +823,13 @@ class FlowAccountMenu {
                 this.clearAmountInputs();
                 this.clearSearch();
             } else {
-              if(this.openPopupButton.style.display !== 'none') this.openPopupButton.style.display = 'none';
+              if(this.openAppButton.style.display !== 'none') this.openAppButton.style.display = 'none';
             }
         }
     }
 
     registerMenuCommands() {
-        GM_registerMenuCommand('แก้ไขรายการสินค้า', () => this.openTextAreaPopup());
+        GM_registerMenuCommand('แก้ไขรายการสินค้า', () => this.settingProduct());
         GM_registerMenuCommand('ตั้งค่าหน่วงเวลาคำสั่ง', () => this.settingTimeout());
     }
 
@@ -603,7 +881,7 @@ class FlowAccountMenu {
     }
 
     updateRowColors() {
-        const rows = document.querySelectorAll("#options-table tbody tr");
+        const rows = document.querySelectorAll("#product-list-table tbody tr");
         rows.forEach(row => {
             const amountInput = row.querySelector(".amount-input");
             const extraInput = row.querySelector(".extra-input");
@@ -706,179 +984,15 @@ class FlowAccountMenu {
             `สินค้าทั้งหมด: ${allItems} รายการ | ขาย: ${saleCount} รายการ | แถม: ${extraCount} รายการ | ทั้งหมด: ${totalItems} ชิ้น`;
     }
 
-    openTextAreaPopup() {
-        // Add modern styles
-        GM_addStyle(`
-        .modern-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0);
-            z-index: 99999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease-out, background-color 0.3s ease-out;
-            backdrop-filter: blur(0px);
-        }
-
-        .modern-overlay.active {
-            background-color: rgba(0,0,0,0.7);
-            opacity: 1;
-            pointer-events: all;
-            backdrop-filter: blur(5px);
-        }
-
-        .modern-overlay.active .modern-container {
-            transform: translateY(0);
-            opacity: 1;
-        }
-
-        .modern-container {
-            background-color: #ffffff;
-            padding: 2rem;
-            border-radius: 12px;
-            width: min(90vw, 800px);
-            max-height: 90vh;
-            text-align: center;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-            display: flex;
-            flex-direction: column;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transform: translateY(20px);
-            opacity: 0;
-            transition: all 0.3s ease-out 0.1s;
-        }
-
-        .modern-textarea {
-            width: 100%;
-            height: 65vh;
-            font-size: 14px;
-            margin-bottom: 1.5rem;
-            padding: 1rem;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            resize: none;
-            line-height: 1.5;
-            background: #f9f9f9;
-            transition: all 0.2s ease;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-        }
-
-        .modern-textarea:focus {
-            outline: none;
-            border-color: #2898CB;
-            box-shadow: 0 0 0 2px rgba(40, 152, 203, 0.2);
-            background: #fff;
-        }
-
-        .modern-button-container {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-        }
-
-        .modern-button {
-            padding: 0.75rem 1.75rem;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 500;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .modern-button-primary {
-            background-color: #2898CB;
-            color: white;
-        }
-
-        .modern-button-third {
-            background-color: #2898CB;
-            color: white;
-        }
-
-        .modern-button-secondary {
-            background-color: #2898CB;
-            color: white;
-        }
-
-        .modern-button-primary:hover {
-            background-color: #1e7ba8;
-            transform: translateY(-1px);
-        }
-
-        .modern-button-third:hover {
-            background-color: #1e7ba8;
-            transform: translateY(-1px);
-        }
-
-        .modern-button-secondary:hover {
-            background-color: #1e7ba8;
-            transform: translateY(-1px);
-        }
-
-        .modern-button:active {
-            transform: translateY(0);
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-		.modern-button-primary:before{
-			content: "🖫 ";
-			font-size: 1.3em;
-		}
-		.modern-button-third:before{
-			content: "✎ ";
-			font-size: 1.2em;
-		}
-		.modern-button-secondary:before{
-			content: "✖ ";
-			font-size: 1.2em;
-		}
-        #txt-area{
-           background-color: #e9e9e9;
-        }
-        #txt-header{
-           font-size: 2em;
-           text-align: center;
-           vertical-align: middle;
-           line-height: 50px;
-           background-color: #2898CB;
-           color: white;
-           height: 50px;
-           margin-bottom: 5px;
-        }
-    `);
-
+    settingProduct() {
         // Create overlay
         const overlay = document.createElement('div');
-        overlay.className = 'modern-overlay';
+        overlay.className = 'overlay';
         document.body.appendChild(overlay);
 
         // Create container
         const container = document.createElement('div');
-        container.className = 'modern-container';
+        container.className = 'setting-product-container';
         overlay.appendChild(container);
 
         const txtHeader = document.createElement('div');
@@ -888,57 +1002,55 @@ class FlowAccountMenu {
 
         // Create textarea
         const textArea = document.createElement('textarea');
-        textArea.className = 'modern-textarea';
-        textArea.id = 'txt-area';
+        textArea.className = 'setting-product-textarea text-disabled';
         textArea.value = this.productList.join('\n');
         textArea.placeholder = "ใส่รายการสินค้า, บรรทัดละ 1 รายการ...";
-        textArea.setAttribute("disabled", true);
+        textArea.disabled = true;
         container.appendChild(textArea);
 
         // Create button container
         const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'modern-button-container';
+        buttonContainer.className = 'setting-product-button-container';
 
         const closeOverlay = () => {
             overlay.classList.remove('active');
             setTimeout(() => {
                 overlay.remove();
-                this.showPopup();
+                this.show();
             }, 200); // Match the transition duration
         };
 
         // Create save button
         const saveButton = document.createElement('button');
-        saveButton.className = 'modern-button modern-button-primary';
+        saveButton.className = 'setting-product-button button-primary';
         saveButton.textContent = 'บันทึก';
         saveButton.addEventListener('click', () => {
             this.productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
             GM_setValue('productList', this.productList);
-            this.showNotification('บันทึกรายการสินค้าเรียบร้อยแล้ว', 'success');
+            this.showNotification('บันทึกเรียบร้อยแล้ว', 'success');
             this.displayProductList();
             closeOverlay();
         });
 
         const editButton = document.createElement('button');
-        editButton.className = 'modern-button modern-button-third';
+        editButton.className = 'setting-product-button button-primary';
+        editButton.id = 'product-edit';
         editButton.textContent = 'แก้ไข';
         editButton.addEventListener('click', () => {
-            textArea.disabled = false
-            textArea.style.backgroundColor = 'white';
+            textArea.disabled = false;
+            textArea.classList.remove("text-disabled");
         });
 
-        // Create close button
         const closeButton = document.createElement('button');
-        closeButton.className = 'modern-button modern-button-secondary';
+        closeButton.className = 'setting-product-button button-secondary';
         closeButton.textContent = 'ยกเลิก';
         closeButton.addEventListener('click', closeOverlay);
 
-        // Add buttons to container
         buttonContainer.appendChild(saveButton);
         buttonContainer.appendChild(editButton);
         buttonContainer.appendChild(closeButton);
         container.appendChild(buttonContainer);
-        this.hidePopup();
+        this.hide();
 
         // Focus textarea
         setTimeout(() => textArea.focus(), 100);
@@ -994,12 +1106,12 @@ class FlowAccountMenu {
             });
 
             if (selectedProducts.length === 0) {
-                this.showNotification('กรุณาระบุจำนวน', 'error', 1200);
+                this.showNotification('ระบุจำนวนสินค้า', 'error', 1200);
                 return;
             }
 
             this.clearSearch();
-            this.hidePopup();
+            this.hide();
             let inputIndex = 1;
             let itemInProcess = 1;
             let selectedProductIndex = 0;
@@ -1142,111 +1254,8 @@ class FlowAccountMenu {
     }
 
     settingTimeout() {
-        GM_addStyle(`
-        #timeout-save:before {
-            content: "🖫 ";
-            font-size: 1.3em;
-        }
-        #timeout-reset:before {
-            content: "↻ ";
-            font-size: 1.35em;
-        }
-        .timeout-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0);
-            z-index: 99999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease-out, background-color 0.3s ease-out;
-            backdrop-filter: blur(0px);
-        }
-        .timeout-overlay.active {
-            background-color: rgba(0,0,0,0.5);
-            opacity: 1;
-            pointer-events: all;
-            backdrop-filter: blur(3px);
-        }
-        .timeout-container {
-            background-color: #fff;
-            padding: 30px;
-            border-radius: 10px;
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-            transform: translateY(20px);
-            opacity: 0;
-            transition: all 0.3s ease-out 0.1s;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .timeout-overlay.active .timeout-container {
-            transform: translateY(0);
-            opacity: 1;
-        }
-        .timeout-title {
-            margin-bottom: 20px;
-            font-size: 24px;
-            color: #333;
-        }
-        .timeout-input-container {
-            margin-bottom: 15px;
-        }
-        .timeout-label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 16px;
-            color: #555;
-        }
-        .timeout-input {
-            padding: 10px;
-            width: 100%;
-            max-width: 250px;
-            font-size: 16px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-sizing: border-box;
-            margin-bottom: 10px;
-            transition: all 0.2s ease;
-        }
-        .timeout-input:focus {
-            outline: none;
-            border-color: #3CAEDA;
-            box-shadow: 0 0 0 2px rgba(60, 174, 218, 0.2);
-        }
-        .timeout-button-container {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-        }
-        .timeout-button {
-            padding: 12px 25px;
-            font-size: 18px;
-            background-color: #3CAEDA;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .timeout-button:hover {
-            background-color: #2887B6;
-            transform: translateY(-1px);
-        }
-        .timeout-button:active {
-            transform: translateY(0);
-        }
-    `);
-
         const overlay = document.createElement('div');
-        overlay.className = 'timeout-overlay';
+        overlay.className = 'overlay';
         document.body.appendChild(overlay);
 
         const container = document.createElement('div');
@@ -1299,11 +1308,16 @@ class FlowAccountMenu {
         resetButton.className = 'timeout-button';
         resetButton.innerText = 'คืนค่าเริ่มต้น';
 
+        const cancelButton = document.createElement('button');
+        cancelButton.id = 'timeout-cancel';
+        cancelButton.className = 'timeout-button';
+        cancelButton.innerText = 'ยกเลิก';
+
         const closeOverlay = () => {
             overlay.classList.remove('active');
             setTimeout(() => {
                 overlay.remove();
-                this.showPopup();
+                this.show();
             }, 200);
         };
 
@@ -1330,6 +1344,7 @@ class FlowAccountMenu {
             GM_setValue('dropdownTimeout', this.TIMEOUTS.DROPDOWN);
             GM_setValue('rowProcessingTimeout', this.TIMEOUTS.ROW_PROCESSING);
             GM_setValue('nextItemTimeout', this.TIMEOUTS.NEXT_ITEM);
+            this.showNotification('บันทึกเรียบร้อยแล้ว', 'success');
             closeOverlay();
         });
 
@@ -1347,7 +1362,12 @@ class FlowAccountMenu {
             GM_setValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM);
         });
 
+        cancelButton.addEventListener('click', () => {
+            closeOverlay();
+        });
+
         buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(cancelButton);
         buttonContainer.appendChild(resetButton);
 
         setTimeout(() => {
