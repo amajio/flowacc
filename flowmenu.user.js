@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.61
+// @version      1.611
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -277,13 +277,13 @@ class FlowAccountMenu {
                 font-size: 1.1em;
             }
 
-            #close-popup:before{
+            #close-app:before{
                 content: "✖ ";
                 font-size: 1.2em;
             }
 
             #setting-list:before {
-                content: "🛠 ";
+                content: "🌣 ";
                 font-size: 1.3em;
             }
 
@@ -507,7 +507,7 @@ class FlowAccountMenu {
             }
             #timeout-cancel:before {
                 content: "✖ ";
-                font-size: 1.3em;
+                font-size: 1.2em;
             }
             #timeout-reset:before {
                 content: "↻ ";
@@ -590,7 +590,7 @@ class FlowAccountMenu {
         this.app.innerHTML = `
           <div style="text-align: right; margin-bottom: 10px;">
               <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
-              <input type="text" id="search-box" placeholder="ค้นหา" onkeyup="filterTable() onclick="this.select()" />
+              <input type="text" id="search-box" placeholder="ค้นหา 🔍︎" onkeyup="filterTable() onclick="this.select()" />
           </div>
           <div style="max-height: 75vh; overflow-y: auto;">
             <table id="product-list-table">
@@ -687,11 +687,14 @@ class FlowAccountMenu {
         }, true);
 
         document.addEventListener('keydown', (event) => {
-            const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'));
+            // Select only visible input fields inside the table
+            const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'))
+            .filter(input => input.offsetParent !== null); // Only keep visible elements
+
             const currentIndex = inputs.indexOf(document.activeElement);
             if (currentIndex === -1) return;
 
-            const columnCount = 2;
+            const columnCount = 2; // 2 input fields per row (amount-input & extra-input)
 
             switch(event.key) {
                 case 'ArrowRight':
