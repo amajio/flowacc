@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.62
+// @version      1.63
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -68,7 +68,7 @@ class FlowAccountMenu {
         GM_addStyle(`
 
 /*--------------------*/
-/*      MAIN APP      */
+/*         APP        */
 /*--------------------*/
 
             html { font-size: 100%; }
@@ -91,15 +91,37 @@ class FlowAccountMenu {
                 width: 700px;
                 overflow: hidden;
             }
+
+/*--------------------*/
+/*      HEADER        */
+/*--------------------*/
+
             #header-container{
-                text-align: right;
-                margin-bottom: 10px;
+               display: flex;
+               justify-content: space-between;
+               align-items: center;
+               margin-bottom: 5px;
+            }
+            #imgHeader{
+               display: inline-block;
+               float:left;
+            }
+            #imgHeader img{
+               width: 250px;
+            }
+            #search-box{
+               border-radius: 5px;
+               border: 1px solid #ddd;
+            }
+            #search-box:focus{
+               border: 1px solid #2898CB;
+               box-shadow: 0 0 2px #2898CB;
             }
             #filter-container{
-                margin: 10px;
-                text-align: right;
+                display: flex;
                 position: relative;
                 z=index: 20;
+                gap: 5px;
             }
             #table-container{
                 max-height: 65vh;
@@ -112,11 +134,10 @@ class FlowAccountMenu {
             .filter-dropbtn {
                 background-color: white;
                 color: #333;
-                padding: 6px 12px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 cursor: pointer;
-                font-size: 14px;
+                font-size: 0.9em;
             }
             .filter-dropbtn:focus {
                 background-color: white;
@@ -125,14 +146,14 @@ class FlowAccountMenu {
             }
             .filter-arrow {
                 margin-left: 5px;
-                font-size: 12px;
+                font-size: 10px;
             }
             .filter-dropdown-content {
                 display: none;
                 position: absolute;
-                right: 0;
+                text-align: right;
                 background-color: white;
-                min-width: 160px;
+                min-width: 140px;
                 box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
                 border: 1px solid #ddd;
                 border-radius: 4px;
@@ -140,10 +161,10 @@ class FlowAccountMenu {
             }
             .filter-dropdown-content a {
                 color: #333;
-                padding: 8px 12px;
+                padding: 5px 12px;
                 text-decoration: none;
                 display: block;
-                font-size: 14px;
+                font-size: 0.9em;
                 border-radius: 4px;
             }
             .filter-dropdown-content a:hover {
@@ -153,6 +174,11 @@ class FlowAccountMenu {
             .filter-dropdown:hover .filter-dropdown-content {
                 display: block;
             }
+
+/*--------------------*/
+/*       TABLE        */
+/*--------------------*/
+
             #product-list-table {
                 width: 100%;
                 border-collapse: collapse;
@@ -234,6 +260,7 @@ class FlowAccountMenu {
                 background-color: #2898CB;
                 transition: all 0.2s ease;
             }
+
             .main-menu-button:hover {
                 background-color: #2887B6;
                 transform: translateY(-1px);
@@ -405,31 +432,6 @@ class FlowAccountMenu {
 				left: 50%;
 				transform: translate(-50%, -50%) translateY(0);
 			}
-            #search-box, #filter-select{
-               border-radius: 5px;
-               border: 1px solid #808080;
-               padding: 5px 5px;
-            }
-            #search-box:focus{
-               border: 1px solid #2898CB;
-               box-shadow: 0 0 2px #2898CB;
-            }
-            #filter-select:focus{
-               border: 1px solid #2898CB;
-               box-shadow: 0 0 2px #2898CB;
-            }
-
-/*--------------------*/
-/*     LOGO HEADER    */
-/*--------------------*/
-
-            #imgHeader{
-               display: inline-block;
-               float:left;
-            }
-            #imgHeader img{
-               width: 250px;
-            }
 
 /*---------------------*/
 /* OVERLAY BLACKGROUND */
@@ -677,20 +679,20 @@ class FlowAccountMenu {
         this.app.innerHTML = `
           <div id="header-container">
               <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
-              <input type="text" id="search-box" placeholder="ค้นหา 🔍︎" onclick="this.select()" />
-          </div>
-          <div id="filter-container">
-               <div class="filter-dropdown">
-                   <button class="filter-dropbtn">
-                     แสดงรายการ: ทั้งหมด
-                     <span class="filter-arrow">▼</span>
-                   </button>
-                   <div class="filter-dropdown-content">
-                     <a href="#" data-value="all">ทั้งหมด</a>
-                     <a href="#" data-value="selected">มีจำนวน</a>
-                   </div>
-                   <input type="hidden" id="filter-select" value="all">
-              </div>
+              <div id="filter-container">
+                 <input type="text" id="search-box" placeholder="ค้นหา 🔍︎" onclick="this.select()" />
+                 <div class="filter-dropdown">
+                      <button class="filter-dropbtn">
+                        กรองข้อมูล: ทั้งหมด
+                        <span class="filter-arrow">▼</span>
+                      </button>
+                      <div class="filter-dropdown-content">
+                        <a href="#" data-value="all">ทั้งหมด</a>
+                        <a href="#" data-value="selected">ที่มีจำนวน</a>
+                      </div>
+                      <input type="hidden" id="filter-select" value="all">
+                 </div>
+             </div>
           </div>
           <div id="table-container">
             <table id="product-list-table">
@@ -855,7 +857,7 @@ class FlowAccountMenu {
                 const text = e.target.textContent;
 
                 hiddenInput.value = value;
-                dropdownBtn.innerHTML = `แสดงรายการ: ${text} <span class="filter-arrow">▼</span>`;
+                dropdownBtn.innerHTML = `กรองข้อมูล: ${text} <span class="filter-arrow">▼</span>`;
                 dropdownContent.style.display = 'none'; // Close after selection
                 this.filterTable();
             });
@@ -878,7 +880,19 @@ class FlowAccountMenu {
         let rowNumber = 1;
         let hasSelectedItems = false;
 
-        // First loop: check for "selected" filter condition (amount > 0 or extra > 0)
+        // First loop: Determine if any row has amount > 0 or extra > 0
+        rows.forEach(row => {
+            const amountInput = row.querySelector('.amount-input');
+            const extraInput = row.querySelector('.extra-input');
+            const amount = amountInput ? parseFloat(amountInput.value) || 0 : 0;
+            const extra = extraInput ? parseFloat(extraInput.value) || 0 : 0;
+
+            if (amount > 0 || extra > 0) {
+                hasSelectedItems = true;
+            }
+        });
+
+        // Second loop: Apply filtering
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
             const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
@@ -886,56 +900,37 @@ class FlowAccountMenu {
             const extraInput = row.querySelector('.extra-input');
             const amount = amountInput ? parseFloat(amountInput.value) || 0 : 0;
             const extra = extraInput ? parseFloat(extraInput.value) || 0 : 0;
-
             const isSelected = amount > 0 || extra > 0;
-            if (isSelected) {
-                hasSelectedItems = true;
-            }
 
-            // Apply filtering logic based on selected filter
-            let shouldShow = false; // Default to hiding row
+            let shouldShow = false;
+
             if (filterType === "selected") {
-                // Show only items with amount > 0 or extra > 0 for "selected" filter
+                // Show only if selected (amount > 0 or extra > 0)
                 shouldShow = isSelected;
             } else if (filterType === "all") {
-                // For "all", no need to filter by selection, just show based on search
+                // Show all items
                 shouldShow = true;
             }
 
-            // Now apply the search filter (after checking the selected condition)
+            // Apply search filtering
             if (shouldShow) {
-                // Check if the product name matches search query
                 const matchesSearch = searchParts.every(part => productName.includes(part));
                 if (matchesSearch) {
                     row.style.display = '';
                     row.querySelectorAll('td')[0].textContent = rowNumber++; // Update row numbering
                 } else {
-                    row.style.display = 'none'; // Hide if search doesn't match
+                    row.style.display = 'none';
                 }
             } else {
                 row.style.display = 'none';
             }
         });
 
-        // If no items are selected, ignore the filter and show all rows matching the search query
+        // If no selected items exist, ensure all rows remain hidden
         if (filterType === "selected" && !hasSelectedItems) {
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
-                const matchesSearch = searchParts.every(part => productName.includes(part));
-                if (matchesSearch) {
-                    row.style.display = '';
-                    row.querySelectorAll('td')[0].textContent = rowNumber++;
-                } else {
-                    row.style.display = 'none';
-                }
-            });
+            rows.forEach(row => {row.style.display = 'none'});
         }
     }
-
-
-
-
 
     clearSearch(){
         document.getElementById('search-box').value = '';
