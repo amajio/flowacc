@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.611
+// @version      1.62
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -31,6 +31,12 @@ class FlowAccountMenu {
         this.productList = GM_getValue('productList', []);
         this.lastUrl = location.href;
 
+        this.cachedElements = {
+            amountInputs: null,
+            extraInputs: null,
+            productTable: null
+        };
+
         this.buttonOpen = {
             targetXPath: '//*[@id="documentHeader"]/div/div[2]',
             buttonId: 'openAppButton',
@@ -52,18 +58,28 @@ class FlowAccountMenu {
         this.setupObservers();
         this.registerMenuCommands();
         this.displayProductList();
+
+        this.filterTable = this.filterTable.bind(this);
+        document.getElementById('filter-select').addEventListener('change', this.filterTable);
+        document.getElementById('search-box').addEventListener('input',this._debounce(this.filterTable.bind(this), 100));
     }
 
     initStyles() {
         GM_addStyle(`
 
 /*--------------------*/
-/*      MAIN PAGE     */
+/*      MAIN APP      */
 /*--------------------*/
 
             html { font-size: 100%; }
+            body {
+                text-rendering: optimizeLegibility;
+                font-smooth: antialiased;
+                -webkit-font-smoothing: antialiased;
+            }
             #app-container {
                 position: fixed;
+                height: 85vh;
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
@@ -75,10 +91,75 @@ class FlowAccountMenu {
                 width: 700px;
                 overflow: hidden;
             }
+            #header-container{
+                text-align: right;
+                margin-bottom: 10px;
+            }
+            #filter-container{
+                margin: 10px;
+                text-align: right;
+                position: relative;
+                z=index: 20;
+            }
+            #table-container{
+                max-height: 65vh;
+                overflow-y: auto;
+            }
+            .filter-dropdown {
+                position: relative;
+                display: inline-block;
+            }
+            .filter-dropbtn {
+                background-color: white;
+                color: #333;
+                padding: 6px 12px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .filter-dropbtn:focus {
+                background-color: white;
+                border: 1px solid #2898CB;
+                box-shadow: 0 0 2px #2898CB;
+            }
+            .filter-arrow {
+                margin-left: 5px;
+                font-size: 12px;
+            }
+            .filter-dropdown-content {
+                display: none;
+                position: absolute;
+                right: 0;
+                background-color: white;
+                min-width: 160px;
+                box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                z-index: 25;
+            }
+            .filter-dropdown-content a {
+                color: #333;
+                padding: 8px 12px;
+                text-decoration: none;
+                display: block;
+                font-size: 14px;
+                border-radius: 4px;
+            }
+            .filter-dropdown-content a:hover {
+                background-color: #2898CB;
+                color: white;
+            }
+            .filter-dropdown:hover .filter-dropdown-content {
+                display: block;
+            }
             #product-list-table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-bottom: 18%;
+                margin-bottom: 16%;
+                overflow-y: auto;
+                scroll-behavior: smooth;
+                overscroll-behavior: contain;
             }
             #product-list-table th, #product-list-table td {
                 padding: 8px;
@@ -104,24 +185,28 @@ class FlowAccountMenu {
                 box-sizing: border-box;
                 border-radius: 5px;
                 border: 1px solid #808080;
+                outline: none;
+                box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
             }
             .amount-input:focus, .extra-input:focus {
-                border: 1px solid #2898CB;
-                box-shadow: 0 0 2px #2898CB;
+                border-color: #2898CB;
+                box-shadow:
+                  inset 0 1px 2px rgba(0,0,0,0.05),
+                  0 0 0 2px rgba(40, 152, 203, 0.2);
             }
             #controls-container {
                 position: sticky;
                 bottom: 0;
-                background: white;
                 padding: 10px;
+                background-color: white;
                 border-top: 1px solid #ccc;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 width: 100%;
                 text-align: left;
+                z-index: 10;
             }
-
             .button-row {
                 display: flex;
                 justify-content: space-between;
@@ -179,6 +264,8 @@ class FlowAccountMenu {
             }
             .highlight-row {
                 background-color: #3CAEDA !important;
+                will-change: transform, opacity;
+                contain: content;
             }
             .highlight-product,.highlight-number {
                 font-weight: bold !important;
@@ -190,6 +277,7 @@ class FlowAccountMenu {
                 width: 100%;
                 height: 100%;
                 background: rgba(255, 255, 255, 0.7);
+                animation: fadeIn 0.3s ease-out forwards;
                 z-index: 10000;
                 display: flex;
                 justify-content: center;
@@ -247,7 +335,10 @@ class FlowAccountMenu {
                 right: 0;
                 background-color: #f9f9f9;
                 min-width: 160px;
-                box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+                box-shadow:
+                  0 2px 4px rgba(0,0,0,0.1),
+                  0 4px 8px rgba(0,0,0,0.1);
+                transform: translateZ(0);
                 z-index: 1;
                 border-radius: 5px;
             }
@@ -301,7 +392,10 @@ class FlowAccountMenu {
 				top: 50%;
 				left: 50%;
 				transform: translate(-50%, -50%) translateY(-20px);
-				transition: opacity 0.25s ease, transform 0.3s ease;
+				transition:
+                   opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                   transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                backface-visibility: hidden; /* Fixes flickering */
 			}
 
 			#app-container.visible {
@@ -311,12 +405,16 @@ class FlowAccountMenu {
 				left: 50%;
 				transform: translate(-50%, -50%) translateY(0);
 			}
-            #search-box{
+            #search-box, #filter-select{
                border-radius: 5px;
                border: 1px solid #808080;
                padding: 5px 5px;
             }
             #search-box:focus{
+               border: 1px solid #2898CB;
+               box-shadow: 0 0 2px #2898CB;
+            }
+            #filter-select:focus{
                border: 1px solid #2898CB;
                box-shadow: 0 0 2px #2898CB;
             }
@@ -444,25 +542,15 @@ class FlowAccountMenu {
                 background-color: #2898CB;
                 color: white;
             }
-            .button-secondary {
-                background-color: #2898CB;
-                color: white;
-            }
 
             .button-primary:hover {
-                background-color: #1e7ba8;
+                background-color: #2887B6;
                 transform: translateY(-1px);
             }
-
-            .button-secondary:hover {
-                background-color: #1e7ba8;
-                transform: translateY(-1px);
-            }
-
             .setting-product-button:active {
                 transform: translateY(0);
             }
-		    .button-primary:before{
+		    #product-save:before{
 		    	content: "🖫 ";
 		    	font-size: 1.3em;
 		    }
@@ -470,7 +558,7 @@ class FlowAccountMenu {
 		    	content: "✎ ";
 		    	font-size: 1.2em;
 		    }
-		    .button-secondary:before{
+		    #prudct-close:before{
 		    	content: "✖ ";
 		    	font-size: 1.2em;
 		    }
@@ -554,7 +642,7 @@ class FlowAccountMenu {
             }
             .timeout-input:focus {
                 outline: none;
-                border-color: #3CAEDA;
+                border-color: #2898CB;
                 box-shadow: 0 0 0 2px rgba(60, 174, 218, 0.2);
             }
             .timeout-button-container {
@@ -566,7 +654,7 @@ class FlowAccountMenu {
             .timeout-button {
                 padding: 10px 25px;
                 font-size: 1em;
-                background-color: #3CAEDA;
+                background-color: #2898CB;
                 color: #fff;
                 border: none;
                 border-radius: 5px;
@@ -586,13 +674,25 @@ class FlowAccountMenu {
     initApplication() {
         this.app = document.createElement('div');
         this.app.id = 'app-container';
-        this.app.style.height = '85vh';
         this.app.innerHTML = `
-          <div style="text-align: right; margin-bottom: 10px;">
+          <div id="header-container">
               <div id="imgHeader"><img src="https://flowaccountcdn.com/new_landing/image/flowaccount_logo_banner.svg"></img></div>
-              <input type="text" id="search-box" placeholder="ค้นหา 🔍︎" onkeyup="filterTable() onclick="this.select()" />
+              <input type="text" id="search-box" placeholder="ค้นหา 🔍︎" onclick="this.select()" />
           </div>
-          <div style="max-height: 75vh; overflow-y: auto;">
+          <div id="filter-container">
+               <div class="filter-dropdown">
+                   <button class="filter-dropbtn">
+                     แสดงรายการ: ทั้งหมด
+                     <span class="filter-arrow">▼</span>
+                   </button>
+                   <div class="filter-dropdown-content">
+                     <a href="#" data-value="all">ทั้งหมด</a>
+                     <a href="#" data-value="selected">มีจำนวน</a>
+                   </div>
+                   <input type="hidden" id="filter-select" value="all">
+              </div>
+          </div>
+          <div id="table-container">
             <table id="product-list-table">
                 <thead>
                     <tr>
@@ -631,7 +731,7 @@ class FlowAccountMenu {
         `;
         document.body.appendChild(this.app);
 
-        document.getElementById('search-box').addEventListener('keyup', this.filterTable);
+        this.setupFilterDropdown();
 
         document.getElementById('search-box').onclick = function() {
             this.select();
@@ -659,12 +759,13 @@ class FlowAccountMenu {
             this.hide();
         });
 
-        document.body.addEventListener("input", (event) => {
-            if (event.target.matches(".amount-input, .extra-input")) {
+        document.getElementById('options-list').addEventListener('input', (e) => {
+            if (e.target.classList.contains('amount-input') ||
+                e.target.classList.contains('extra-input')){
                 this.updateSelectedCount();
                 this.updateRowColors();
             }
-        }, true);
+        });
 
         document.body.addEventListener("focus", (event) => {
             if (event.target.matches(".amount-input, .extra-input") && event.target instanceof HTMLInputElement) {
@@ -725,30 +826,115 @@ class FlowAccountMenu {
         });
     }
 
-    filterTable() {
-        const searchQuery = document.getElementById('search-box').value.toLowerCase();
-        const searchParts = searchQuery.split(' ').filter(part => part.trim() !== ''); // Split search by space and filter out empty parts
-        const rows = document.querySelectorAll('#product-list-table tbody tr');
-        let rowNumber = 1; // Start the row number from 1
+    _debounce(func, wait) { //Debounce the Search (Better Performance When Typing)
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+    }
 
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
+    setupFilterDropdown() {
+        const dropdownBtn = this.app.querySelector('.filter-dropbtn');
+        const dropdownContent = this.app.querySelector('.filter-dropdown-content');
+        const hiddenInput = this.app.querySelector('#filter-select');
 
-            // Get the value from the "สินค้า" column (2nd column, product name + quantity)
-            const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
+        // Toggle dropdown on button click
+        dropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdownContent.style.display = dropdownContent .style.display === 'block' ? 'none' : 'block';
+        });
 
-            // Check if all search terms match the full product name (สินค้า)
-            const matches = searchParts.every(part => productName.includes(part));
+        // Handle item selection
+        this.app.querySelectorAll('.filter-dropdown-content a').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const value = e.target.getAttribute('data-value');
+                const text = e.target.textContent;
 
-            if (matches) {
-                row.style.display = ''; // Show the row
-                cells[0].textContent = rowNumber; // Update the "ลำดับ" (first column)
-                rowNumber++; // Increment the row number for the next visible row
-            } else {
-                row.style.display = 'none'; // Hide the row
+                hiddenInput.value = value;
+                dropdownBtn.innerHTML = `แสดงรายการ: ${text} <span class="filter-arrow">▼</span>`;
+                dropdownContent.style.display = 'none'; // Close after selection
+                this.filterTable();
+            });
+        });
+
+        // Close dropdown when clicking elsewhere
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.filter-dropdown')) {
+                dropdownContent.style.display = 'none';
             }
         });
     }
+
+    filterTable() {
+        const searchQuery = document.getElementById('search-box').value.toLowerCase();
+        const searchParts = searchQuery.split(' ').filter(part => part.trim() !== '');
+        const filterType = document.getElementById('filter-select').value;
+        const rows = document.querySelectorAll('#product-list-table tbody tr');
+
+        let rowNumber = 1;
+        let hasSelectedItems = false;
+
+        // First loop: check for "selected" filter condition (amount > 0 or extra > 0)
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
+            const amountInput = row.querySelector('.amount-input');
+            const extraInput = row.querySelector('.extra-input');
+            const amount = amountInput ? parseFloat(amountInput.value) || 0 : 0;
+            const extra = extraInput ? parseFloat(extraInput.value) || 0 : 0;
+
+            const isSelected = amount > 0 || extra > 0;
+            if (isSelected) {
+                hasSelectedItems = true;
+            }
+
+            // Apply filtering logic based on selected filter
+            let shouldShow = false; // Default to hiding row
+            if (filterType === "selected") {
+                // Show only items with amount > 0 or extra > 0 for "selected" filter
+                shouldShow = isSelected;
+            } else if (filterType === "all") {
+                // For "all", no need to filter by selection, just show based on search
+                shouldShow = true;
+            }
+
+            // Now apply the search filter (after checking the selected condition)
+            if (shouldShow) {
+                // Check if the product name matches search query
+                const matchesSearch = searchParts.every(part => productName.includes(part));
+                if (matchesSearch) {
+                    row.style.display = '';
+                    row.querySelectorAll('td')[0].textContent = rowNumber++; // Update row numbering
+                } else {
+                    row.style.display = 'none'; // Hide if search doesn't match
+                }
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // If no items are selected, ignore the filter and show all rows matching the search query
+        if (filterType === "selected" && !hasSelectedItems) {
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                const productName = cells[1] ? cells[1].textContent.toLowerCase() : '';
+                const matchesSearch = searchParts.every(part => productName.includes(part));
+                if (matchesSearch) {
+                    row.style.display = '';
+                    row.querySelectorAll('td')[0].textContent = rowNumber++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+    }
+
+
+
 
 
     clearSearch(){
@@ -758,15 +944,17 @@ class FlowAccountMenu {
 
     show() {
         this.app.style.display = 'block';
-        setTimeout(() => {
+        requestAnimationFrame(() => {
             this.app.classList.add('visible');
-        }, 10);
+        });
     }
 
     hide() {
         this.app.classList.remove('visible');
         setTimeout(() => {
-            this.app.style.display = 'none';
+            requestAnimationFrame(() => {
+                this.app.style.display = 'none';
+            });
         }, 500);
     }
 
@@ -847,6 +1035,8 @@ class FlowAccountMenu {
         const extraInputs = document.querySelectorAll('.extra-input');
         amountInputs.forEach(input => { input.value = 0; });
         extraInputs.forEach(input => { input.value = 0; });
+        document.getElementById('filter-select').value = 'all';
+        this.filterTable();
         this.updateSelectedCount();
         this.updateRowColors();
     }
@@ -892,66 +1082,19 @@ class FlowAccountMenu {
     updateRowColors() {
         const rows = document.querySelectorAll("#product-list-table tbody tr");
         rows.forEach(row => {
-            const amountInput = row.querySelector(".amount-input");
-            const extraInput = row.querySelector(".extra-input");
-            const numberCell = row.querySelector("td:first-child");
-            const productCell = row.querySelector("td:nth-child(2)");
-            const amount = amountInput ? parseInt(amountInput.value) || 0 : 0;
-            const extra = extraInput ? parseInt(extraInput.value) || 0 : 0;
-
-            if (amount > 0 || extra > 0) {
-                row.classList.add('highlight-row');
-                if (numberCell) numberCell.classList.add('highlight-number');
-                if (productCell) productCell.classList.add('highlight-product');
-            } else {
-                row.classList.remove('highlight-row');
-                if (numberCell) numberCell.classList.remove('highlight-number');
-                if (productCell) productCell.classList.remove('highlight-product');
-            }
+            const amount = parseInt(row.querySelector('.amount-input').value) || 0;
+            const extra = parseInt(row.querySelector('.extra-input').value) || 0;
+            const shouldHighlight = amount > 0 || extra > 0;
+            row.classList.toggle('highlight-row', shouldHighlight);
+            row.querySelector('td:first-child').classList.toggle('highlight-number', shouldHighlight);
+            row.querySelector('td:nth-child(2)').classList.toggle('highlight-product', shouldHighlight);
         });
     }
 
     displayProductList() {
         const optionsList = document.getElementById('options-list');
         optionsList.innerHTML = "";
-
-        if(this.productList.length > 0) {
-            this.productList.forEach((product, index) => {
-                if(product.startsWith('//')) return;
-
-                const row = document.createElement('tr');
-                const number = document.createElement('td');
-                number.className = 'list-number';
-                number.textContent = index + 1;
-                const productCell = document.createElement('td');
-                productCell.textContent = product;
-
-                const amountCell = document.createElement('td');
-                const amountInput = document.createElement('input');
-                amountInput.type = 'number';
-                amountInput.className = 'amount-input';
-                amountInput.min = '0';
-                amountInput.value = '0';
-                amountInput.setAttribute('data-product', product);
-                amountCell.appendChild(amountInput);
-
-                const extraCell = document.createElement('td');
-                const extraInput = document.createElement('input');
-                extraInput.type = 'number';
-                extraInput.className = 'extra-input';
-                extraInput.min = '0';
-                extraInput.value = '0';
-                extraInput.setAttribute('data-product', product);
-                extraCell.appendChild(extraInput);
-
-                row.appendChild(number);
-                row.appendChild(productCell);
-                row.appendChild(amountCell);
-                row.appendChild(extraCell);
-                optionsList.appendChild(row);
-            });
-            this.updateSelectedCount();
-        } else {
+        if(this.productList.length === 0){ // empty table
             const row = document.createElement('tr');
             const emptyProduct = document.createElement('td');
             emptyProduct.id = 'empty-product';
@@ -962,12 +1105,57 @@ class FlowAccountMenu {
             row.appendChild(emptyProduct);
             optionsList.appendChild(row);
             this.updateSelectedCount();
+            return;
         }
+
+        const fragment = document.createDocumentFragment();
+        this.productList.forEach((product, index) => {
+            if(product.startsWith('//')) return;
+
+            const row = document.createElement('tr');
+            const number = document.createElement('td');
+            number.className = 'list-number';
+            number.textContent = index + 1;
+            const productCell = document.createElement('td');
+            productCell.textContent = product;
+
+            const amountCell = document.createElement('td');
+            const amountInput = document.createElement('input');
+            amountInput.type = 'number';
+            amountInput.className = 'amount-input';
+            amountInput.min = '0';
+            amountInput.value = '0';
+            amountInput.setAttribute('data-product', product);
+            amountCell.appendChild(amountInput);
+
+            const extraCell = document.createElement('td');
+            const extraInput = document.createElement('input');
+            extraInput.type = 'number';
+            extraInput.className = 'extra-input';
+            extraInput.min = '0';
+            extraInput.value = '0';
+            extraInput.setAttribute('data-product', product);
+            extraCell.appendChild(extraInput);
+
+            row.appendChild(number);
+            row.appendChild(productCell);
+            row.appendChild(amountCell);
+            row.appendChild(extraCell);
+            fragment.appendChild(row);
+        });
+        optionsList.appendChild(fragment);
+        this.cachedElements.amountInputs = null; //Reset cache
+        this.updateSelectedCount();
     }
 
     updateSelectedCount() {
-        const amountInputs = document.querySelectorAll('.amount-input');
-        const extraInputs = document.querySelectorAll('.extra-input');
+        if (!this.cachedElements.amountInputs) {
+            this.cachedElements.amountInputs = document.querySelectorAll('.amount-input');
+            this.cachedElements.extraInputs = document.querySelectorAll('.extra-input');
+        }
+
+        const amountInputs = this.cachedElements.amountInputs;
+        const extraInputs = this.cachedElements.extraInputs;
         let saleCount = 0;
         let totalItems = 0;
         let allItems = 0;
@@ -1032,6 +1220,7 @@ class FlowAccountMenu {
         // Create save button
         const saveButton = document.createElement('button');
         saveButton.className = 'setting-product-button button-primary';
+        saveButton.id = 'product-save';
         saveButton.textContent = 'บันทึก';
         saveButton.disabled = true;
         saveButton.addEventListener('click', () => {
@@ -1053,7 +1242,8 @@ class FlowAccountMenu {
         });
 
         const closeButton = document.createElement('button');
-        closeButton.className = 'setting-product-button button-secondary';
+        closeButton.className = 'setting-product-button button-primary';
+        closeButton.id = 'product-close';
         closeButton.textContent = 'ยกเลิก';
         closeButton.addEventListener('click', closeOverlay);
 
