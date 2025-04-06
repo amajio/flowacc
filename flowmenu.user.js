@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.63
+// @version      1.65
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=flowaccount.com
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -17,51 +18,13 @@
 
 class FlowAccountMenu {
     constructor() {
-        this.PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
-        this.DEFAULT_TIMEOUTS = {
-            DROPDOWN: 600,
-            ROW_PROCESSING: 700,
-            NEXT_ITEM: 100,
-        };
-        this.TIMEOUTS = {
-            DROPDOWN: GM_getValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN),
-            ROW_PROCESSING: GM_getValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING),
-            NEXT_ITEM: GM_getValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM),
-        };
-        this.productList = GM_getValue('productList', []);
-        this.lastUrl = location.href;
-
-        this.cachedElements = {
-            amountInputs: null,
-            extraInputs: null,
-            productTable: null
-        };
-
-        this.buttonOpen = {
-            targetXPath: '//*[@id="documentHeader"]/div/div[2]',
-            buttonId: 'openAppButton',
-            buttonText: 'รายการสินค้า'
-        };
-
-        this.buttonColor = {
-            default: '',
-            primary:'',
-            success: '',
-            info: '',
-            warning: '',
-            danger: ''
-        };
-
+        this.initConstGlobal();
         this.initStyles();
         this.initApplication();
         this.initOpenButton();
         this.setupObservers();
         this.registerMenuCommands();
         this.displayProductList();
-
-        this.filterTable = this.filterTable.bind(this);
-        document.getElementById('filter-select').addEventListener('change', this.filterTable);
-        document.getElementById('search-box').addEventListener('input',this._debounce(this.filterTable.bind(this), 100));
     }
 
     initStyles() {
@@ -311,6 +274,23 @@ class FlowAccountMenu {
                 align-items: center;
                 font-size: 1.5em;
                 color: #2898CB;
+                backdrop-filter: blur(1px);
+            }
+            #force-stop-button{
+                width: 100px;
+                font-size: 0.55em;
+                cursor: pointer;
+                color: #ff4444;
+                border: none;
+                border: 2px solid #e0e0e0;
+                border-radius: 5px;
+                background-color: white;
+            }
+            #force-stop-button:hover{
+                color: white;
+                background-color: #ff4444;
+                border: 2px solid #ff4444;
+                transition: all 0.12s ease;
             }
             .notification {
                 position: fixed;
@@ -401,8 +381,8 @@ class FlowAccountMenu {
             }
 
             #setting-list:before {
-                content: "🌣 ";
-                font-size: 1.3em;
+                content: "☰ ";
+                font-size: 1.2em;
             }
 
             #submit-selections:before{
@@ -527,6 +507,10 @@ class FlowAccountMenu {
                 display: flex;
                 justify-content: flex-end;
                 gap: 12px;
+            }
+            .warning-text{
+                display: flex;
+                justify-content: flex-start;
             }
             .setting-product-button {
                 padding: 0.75rem 1.75rem;
@@ -673,6 +657,28 @@ class FlowAccountMenu {
         `);
     }
 
+    initConstGlobal(){
+        this.PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
+        this.DEFAULT_TIMEOUTS = {
+            DROPDOWN: 600,
+            ROW_PROCESSING: 800,
+            NEXT_ITEM: 100,
+        };
+        this.TIMEOUTS = {
+            DROPDOWN: GM_getValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN),
+            ROW_PROCESSING: GM_getValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING),
+            NEXT_ITEM: GM_getValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM),
+        };
+        this.productList = GM_getValue('productList', []);
+        this.lastUrl = location.href;
+        this.forceStop = false;
+        this.cachedElements = {
+            amountInputs: null,
+            extraInputs: null,
+            productTable: null
+        };
+    }
+
     initApplication() {
         this.app = document.createElement('div');
         this.app.id = 'app-container';
@@ -734,6 +740,11 @@ class FlowAccountMenu {
         document.body.appendChild(this.app);
 
         this.setupFilterDropdown();
+
+        document.getElementById('filter-select').addEventListener('change', this.filterTable);
+
+        document.getElementById('search-box').addEventListener('input',this._debounce(this.filterTable.bind(this), 100));
+
 
         document.getElementById('search-box').onclick = function() {
             this.select();
@@ -798,32 +809,38 @@ class FlowAccountMenu {
             if (currentIndex === -1) return;
 
             const columnCount = 2; // 2 input fields per row (amount-input & extra-input)
+            let prevent = false;
 
             switch(event.key) {
                 case 'ArrowRight':
                     if ((currentIndex + 1) % columnCount !== 0) {
                         inputs[currentIndex + 1]?.focus();
-                        event.preventDefault();
+                        prevent = true;
                     }
                     break;
                 case 'ArrowLeft':
                     if (currentIndex % columnCount !== 0) {
                         inputs[currentIndex - 1]?.focus();
-                        event.preventDefault();
+                        prevent = true;
                     }
                     break;
                 case 'ArrowDown':
                     if (currentIndex + columnCount < inputs.length) {
                         inputs[currentIndex + columnCount]?.focus();
-                        event.preventDefault();
+                        prevent = true;
                     }
                     break;
                 case 'ArrowUp':
                     if (currentIndex - columnCount >= 0) {
                         inputs[currentIndex - columnCount]?.focus();
-                        event.preventDefault();
+                        prevent = true;
                     }
                     break;
+            }
+
+            // Prevent default behavior even if no navigation occurs
+            if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+                event.preventDefault();
             }
         });
     }
@@ -836,6 +853,15 @@ class FlowAccountMenu {
             clearTimeout(timeout);
             timeout = setTimeout(() => func.apply(context, args), wait);
         };
+    }
+
+    clearAndUpdate(){
+        document.getElementById('filter-select').value = 'all';
+        const dropdown = this.app.querySelector('.filter-dropbtn');
+        dropdown.innerHTML = `กรองข้อมูล: ทั้งหมด <span class="filter-arrow">▼</span>`;
+        this.filterTable();
+        this.updateSelectedCount();
+        this.updateRowColors();
     }
 
     setupFilterDropdown() {
@@ -938,6 +964,10 @@ class FlowAccountMenu {
     }
 
     show() {
+        if(this.app.style.display === 'block'){
+            this.hide();
+            return;
+        }
         this.app.style.display = 'block';
         requestAnimationFrame(() => {
             this.app.classList.add('visible');
@@ -956,8 +986,8 @@ class FlowAccountMenu {
     initOpenButton() {
         // Create the button element
         this.openAppButton = document.createElement('button');
-        this.openAppButton.id = this.buttonOpen.buttonId;
-        this.openAppButton.innerText = this.buttonOpen.buttonText;
+        this.openAppButton.id = 'openAppButton';
+        this.openAppButton.innerText ='✚ เพิ่มรายการ';
 
             // Add click handler
         this.openAppButton.addEventListener('click', () => {
@@ -975,7 +1005,7 @@ class FlowAccountMenu {
         const retryDelay = 1000;
 
         const target = document.evaluate(
-            this.buttonOpen.targetXPath,
+            '//*[@id="documentHeader"]/div/div[2]',
             document,
             null,
             XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -984,9 +1014,15 @@ class FlowAccountMenu {
 
         if (target) {
             // Check if button does not exist
-            if (!document.getElementById(this.buttonOpen.buttonId)) {
+            if (!document.getElementById(this.openAppButton.id)) {
                 target.insertBefore(this.openAppButton,target.firstChild);
                 this.openAppButton.style.display = 'inline-block';
+                let zipInput = document.querySelector('.contact-zipcode');
+                if(zipInput){
+                    zipInput.addEventListener('change', (event) => {
+                        console.log(event.zipInput.value)
+                    });
+                }
             }
         } else if (attempt < maxAttempts) {
             setTimeout(() => this.injectButtonWithRetry(attempt + 1), retryDelay);
@@ -995,8 +1031,7 @@ class FlowAccountMenu {
 
     setupObservers() {
         const observer = new MutationObserver((mutations) => {
-
-            if (!document.getElementById(this.buttonOpen.buttonId) && this.openAppButton) {
+            if (!document.getElementById(this.openAppButton.buttonId) && this.openAppButton) {
                 this.injectButtonWithRetry();
                 this.includeURL();
             }
@@ -1030,13 +1065,58 @@ class FlowAccountMenu {
         const extraInputs = document.querySelectorAll('.extra-input');
         amountInputs.forEach(input => { input.value = 0; });
         extraInputs.forEach(input => { input.value = 0; });
-        document.getElementById('filter-select').value = 'all';
-        this.filterTable();
-        this.updateSelectedCount();
-        this.updateRowColors();
+        this.clearAndUpdate()
     }
 
     showLoading(show, message = 'กำลังประมวลผล...') {
+        let loader = document.getElementById('loading-overlay');
+
+        if (show) {
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.id = 'loading-overlay';
+                loader.className = 'loading-overlay';
+                // Adjust flex direction to stack the message and button vertically.
+                loader.style.flexDirection = 'column';
+                document.body.appendChild(loader);
+            } else {
+                // Clear previous content if loader already exists
+                loader.innerHTML = '';
+            }
+
+            // Create and append the message element
+            const messageElem = document.createElement('div');
+            messageElem.textContent = message;
+            messageElem.style.marginBottom = '10px';
+            loader.appendChild(messageElem);
+
+            // Create and append the "Stop" button
+            const stopButton = document.createElement('button');
+            stopButton.textContent = 'หยุดการทำงาน';
+            stopButton.id = 'force-stop-button';
+            stopButton.addEventListener('click', () => {
+                // Remove the loader when the button is clicked
+                if (loader) {
+                    this.forceStop = true;
+                    //document.body.removeChild(loader);
+                }
+            });
+            loader.appendChild(stopButton);
+
+            // Return an updater function for the message element
+            return (newMessage) => {
+                messageElem.textContent = newMessage;
+            };
+        } else if (loader) {
+            document.body.removeChild(loader);
+        }
+
+        // In case the loader does not exist, return a no-op function.
+        return () => {};
+    }
+
+
+    /*showLoading(show, message = 'กำลังประมวลผล...') {
         let loader = document.getElementById('loading-overlay');
 
         if (show) {
@@ -1060,7 +1140,7 @@ class FlowAccountMenu {
         }
 
         return () => {};
-    }
+    }*/
 
     showNotification(message, type = 'info', delay = 3000) {
         const notification = document.createElement('div');
@@ -1180,44 +1260,40 @@ class FlowAccountMenu {
         // Create overlay
         const overlay = document.createElement('div');
         overlay.className = 'overlay';
+
+        // Set inner HTML structure
+        overlay.innerHTML = `
+        <div class="setting-product-container">
+            <div id="txt-header">รายการสินค้า</div>
+            <textarea
+                class="setting-product-textarea"
+                placeholder="ใส่รายการสินค้า, บรรทัดละ 1 รายการ..."
+                disabled
+            ></textarea>
+            <div class="setting-product-button-container">
+                <button class="setting-product-button button-primary" id="product-save" disabled>บันทึก</button>
+                <button class="setting-product-button button-primary" id="product-edit">แก้ไข</button>
+                <button class="setting-product-button button-primary" id="product-close">ยกเลิก</button>
+            </div>
+        </div>
+    `;
         document.body.appendChild(overlay);
 
-        // Create container
-        const container = document.createElement('div');
-        container.className = 'setting-product-container';
-        overlay.appendChild(container);
-
-        const txtHeader = document.createElement('div');
-        txtHeader.id = 'txt-header';
-        txtHeader.innerHTML = 'รายการสินค้า';
-        container.appendChild(txtHeader);
-
-        // Create textarea
-        const textArea = document.createElement('textarea');
-        textArea.className = 'setting-product-textarea';
+        const textArea = overlay.querySelector('.setting-product-textarea');
         textArea.value = this.productList.join('\n');
-        textArea.placeholder = "ใส่รายการสินค้า, บรรทัดละ 1 รายการ...";
-        textArea.disabled = true;
-        container.appendChild(textArea);
 
-        // Create button container
-        const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'setting-product-button-container';
+        const saveButton = overlay.querySelector('#product-save');
+        const editButton = overlay.querySelector('#product-edit');
+        const closeButton = overlay.querySelector('#product-close');
 
         const closeOverlay = () => {
             overlay.classList.remove('active');
             setTimeout(() => {
                 overlay.remove();
                 this.show();
-            }, 200); // Match the transition duration
+            }, 200);
         };
 
-        // Create save button
-        const saveButton = document.createElement('button');
-        saveButton.className = 'setting-product-button button-primary';
-        saveButton.id = 'product-save';
-        saveButton.textContent = 'บันทึก';
-        saveButton.disabled = true;
         saveButton.addEventListener('click', () => {
             this.productList = textArea.value.split("\n").map(item => item.trim()).filter(item => item.length > 0);
             GM_setValue('productList', this.productList);
@@ -1226,34 +1302,32 @@ class FlowAccountMenu {
             closeOverlay();
         });
 
-        const editButton = document.createElement('button');
-        editButton.className = 'setting-product-button button-primary';
-        editButton.id = 'product-edit';
-        editButton.textContent = 'แก้ไข';
         editButton.addEventListener('click', () => {
             textArea.disabled = false;
             saveButton.disabled = false;
             editButton.disabled = true;
         });
 
-        const closeButton = document.createElement('button');
-        closeButton.className = 'setting-product-button button-primary';
-        closeButton.id = 'product-close';
-        closeButton.textContent = 'ยกเลิก';
         closeButton.addEventListener('click', closeOverlay);
 
-        buttonContainer.appendChild(saveButton);
-        buttonContainer.appendChild(editButton);
-        buttonContainer.appendChild(closeButton);
-        container.appendChild(buttonContainer);
         this.hide();
 
-        // Focus textarea
         setTimeout(() => textArea.focus(), 100);
-
         setTimeout(() => {
             overlay.classList.add('active');
         }, 10);
+    }
+
+    disableKeyboardInput() {
+        document.addEventListener("keydown", this.preventKeyEvent, true);
+    }
+
+    enableKeyboardInput() {
+        document.removeEventListener("keydown", this.preventKeyEvent, true);
+    }
+
+    preventKeyEvent(event) {
+        event.preventDefault();
     }
 
     simulateTyping(inputElement, value) {
@@ -1280,6 +1354,7 @@ class FlowAccountMenu {
 
     processSelectedProducts() {
         try {
+            this.disableKeyboardInput();
             const selectedProducts = [];
             let totalProcessItems = 0;
             const amountInputs = document.querySelectorAll('.amount-input');
@@ -1303,6 +1378,7 @@ class FlowAccountMenu {
 
             if (selectedProducts.length === 0) {
                 this.showNotification('ระบุจำนวนสินค้า', 'error', 1200);
+                this.enableKeyboardInput();
                 return;
             }
 
@@ -1315,9 +1391,15 @@ class FlowAccountMenu {
 
             // Main processing function (keep as inner function to maintain closure)
             const processNextInput = () => {
-                if (selectedProductIndex >= selectedProducts.length) {
+                if (selectedProductIndex >= selectedProducts.length || this.forceStop) {
                     this.showLoading(false);
-                    this.showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
+                    this.enableKeyboardInput();
+                    if(this.forceStop){
+                       this.forceStop = false;
+                       this.showNotification('หยุดการทำงาน', 'error');
+                    }else{
+                       this.showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
+                    }
                     return;
                 }
 
@@ -1445,6 +1527,7 @@ class FlowAccountMenu {
         } catch (error) {
             this.showLoading(false);
             this.showNotification(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
+            this.enableKeyboardInput();
             console.error('Error processing products:', error);
         }
     }
@@ -1452,62 +1535,45 @@ class FlowAccountMenu {
     settingTimeout() {
         const overlay = document.createElement('div');
         overlay.className = 'overlay';
+        overlay.innerHTML = `
+        <div class="timeout-container">
+            <h3 class="timeout-title">ตั้งค่าหน่วงเวลา</h3>
+
+            <div class="timeout-input-container">
+                <label class="timeout-label">เวลา เลือกรายการ (มิลลิวินาที)</label>
+                <input type="number" class="timeout-input" name="DROPDOWN" />
+            </div>
+
+            <div class="timeout-input-container">
+                <label class="timeout-label">เวลา ใส่จำนวน (มิลลิวินาที)</label>
+                <input type="number" class="timeout-input" name="ROW_PROCESSING" />
+            </div>
+
+            <div class="timeout-input-container">
+                <label class="timeout-label">เวลา เริ่มรายการถัดไป (มิลลิวินาที)</label>
+                <input type="number" class="timeout-input" name="NEXT_ITEM" />
+            </div>
+
+            <div class="timeout-button-container">
+                <button id="timeout-save" class="timeout-button">บันทึก</button>
+                <button id="timeout-cancel" class="timeout-button">ยกเลิก</button>
+                <button id="timeout-reset" class="timeout-button">คืนค่าเริ่มต้น</button>
+            </div>
+        </div>
+    `;
         document.body.appendChild(overlay);
 
-        const container = document.createElement('div');
-        container.className = 'timeout-container';
-        overlay.appendChild(container);
+        // Set initial values
+        overlay.querySelector('input[name="DROPDOWN"]').value = this.TIMEOUTS.DROPDOWN;
+        overlay.querySelector('input[name="ROW_PROCESSING"]').value = this.TIMEOUTS.ROW_PROCESSING;
+        overlay.querySelector('input[name="NEXT_ITEM"]').value = this.TIMEOUTS.NEXT_ITEM;
 
-        const title = document.createElement('h3');
-        title.className = 'timeout-title';
-        title.innerText = 'ตั้งค่าหน่วงเวลา';
-        container.appendChild(title);
-
-        const createInput = (label, value, name) => {
-            const inputContainer = document.createElement('div');
-            inputContainer.className = 'timeout-input-container';
-            container.appendChild(inputContainer);
-
-            const labelEl = document.createElement('label');
-            labelEl.className = 'timeout-label';
-            labelEl.innerText = label;
-            inputContainer.appendChild(labelEl);
-
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'timeout-input';
-            input.value = value;
-            input.name = name;
-
+        // Input event bindings
+        overlay.querySelectorAll('.timeout-input').forEach(input => {
             input.addEventListener('input', () => {
-                this.TIMEOUTS[name] = input.value;
+                this.TIMEOUTS[input.name] = parseInt(input.value);
             });
-
-            inputContainer.appendChild(input);
-        };
-
-        createInput('เวลา เลือกรายการ (มิลลิวินาที)', this.TIMEOUTS.DROPDOWN, 'DROPDOWN');
-        createInput('เวลา ใส่จำนวน (มิลลิวินาที)', this.TIMEOUTS.ROW_PROCESSING, 'ROW_PROCESSING');
-        createInput('เวลา เริ่มรายการถัดไป (มิลลิวินาที)', this.TIMEOUTS.NEXT_ITEM, 'NEXT_ITEM');
-
-        const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'timeout-button-container';
-        container.appendChild(buttonContainer);
-
-        const saveButton = document.createElement('button');
-        saveButton.id = 'timeout-save';
-        saveButton.className = 'timeout-button';
-        saveButton.innerText = 'บันทึก';
-
-        const resetButton = document.createElement('button');
-        resetButton.id = 'timeout-reset';
-        resetButton.className = 'timeout-button';
-        resetButton.innerText = 'คืนค่าเริ่มต้น';
-
-        const cancelButton = document.createElement('button');
-        cancelButton.id = 'timeout-cancel';
-        cancelButton.className = 'timeout-button';
-        cancelButton.innerText = 'ยกเลิก';
+        });
 
         const closeOverlay = () => {
             overlay.classList.remove('active');
@@ -1517,14 +1583,15 @@ class FlowAccountMenu {
             }, 200);
         };
 
-        saveButton.addEventListener('click', () => {
+        // Buttons
+        overlay.querySelector('#timeout-save').addEventListener('click', () => {
             let dropdown = parseInt(this.TIMEOUTS.DROPDOWN);
             let rowProcessing = parseInt(this.TIMEOUTS.ROW_PROCESSING);
 
             if (rowProcessing - dropdown < 100) {
                 dropdown = rowProcessing - 100;
                 this.TIMEOUTS.DROPDOWN = dropdown;
-                document.querySelector('input[name="DROPDOWN"]').value = dropdown;
+                overlay.querySelector('input[name="DROPDOWN"]').value = dropdown;
                 this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
                 return;
             }
@@ -1532,7 +1599,7 @@ class FlowAccountMenu {
             if (dropdown > rowProcessing) {
                 rowProcessing = dropdown + 100;
                 this.TIMEOUTS.ROW_PROCESSING = rowProcessing;
-                document.querySelector('input[name="ROW_PROCESSING"]').value = rowProcessing;
+                overlay.querySelector('input[name="ROW_PROCESSING"]').value = rowProcessing;
                 this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
                 return;
             }
@@ -1544,32 +1611,27 @@ class FlowAccountMenu {
             closeOverlay();
         });
 
-        resetButton.addEventListener('click', () => {
+        overlay.querySelector('#timeout-reset').addEventListener('click', () => {
             this.TIMEOUTS.DROPDOWN = this.DEFAULT_TIMEOUTS.DROPDOWN;
             this.TIMEOUTS.ROW_PROCESSING = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
             this.TIMEOUTS.NEXT_ITEM = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
 
-            document.querySelector('input[name="DROPDOWN"]').value = this.DEFAULT_TIMEOUTS.DROPDOWN;
-            document.querySelector('input[name="ROW_PROCESSING"]').value = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
-            document.querySelector('input[name="NEXT_ITEM"]').value = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
+            overlay.querySelector('input[name="DROPDOWN"]').value = this.DEFAULT_TIMEOUTS.DROPDOWN;
+            overlay.querySelector('input[name="ROW_PROCESSING"]').value = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
+            overlay.querySelector('input[name="NEXT_ITEM"]').value = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
 
             GM_setValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN);
             GM_setValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING);
             GM_setValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM);
         });
 
-        cancelButton.addEventListener('click', () => {
-            closeOverlay();
-        });
-
-        buttonContainer.appendChild(saveButton);
-        buttonContainer.appendChild(cancelButton);
-        buttonContainer.appendChild(resetButton);
+        overlay.querySelector('#timeout-cancel').addEventListener('click', closeOverlay);
 
         setTimeout(() => {
             overlay.classList.add('active');
         }, 10);
     }
+
 }
 
 // Initialize the script
