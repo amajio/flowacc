@@ -801,6 +801,7 @@ class FlowAccountMenu {
         }, true);
 
         document.addEventListener('keydown', (event) => {
+            if (event.key === "Escape") this.hide();
             // Select only visible input fields inside the table
             const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'))
             .filter(input => input.offsetParent !== null); // Only keep visible elements
