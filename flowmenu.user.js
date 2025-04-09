@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.65
+// @version      1.66
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -23,7 +23,6 @@ class FlowAccountMenu {
         this.initApplication();
         this.initOpenButton();
         this.setupObservers();
-        this.registerMenuCommands();
         this.displayProductList();
     }
 
@@ -800,6 +799,20 @@ class FlowAccountMenu {
             }
         }, true);
 
+        document.addEventListener("wheel", function(event) {
+            const activeElement = document.activeElement;
+            const isHoveringInput = activeElement.contains(event.target);
+
+            if (
+                activeElement.type === "number" &&
+                (activeElement.classList.contains("amount-input") ||
+                 activeElement.classList.contains("extra-input")) &&
+                isHoveringInput
+            ) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+
         document.addEventListener('keydown', (event) => {
             if (event.key === "Escape") this.hide();
             // Select only visible input fields inside the table
@@ -1056,11 +1069,6 @@ class FlowAccountMenu {
         }
     }
 
-    registerMenuCommands() {
-        GM_registerMenuCommand('แก้ไขรายการสินค้า', () => this.settingProduct());
-        GM_registerMenuCommand('ตั้งค่าหน่วงเวลาคำสั่ง', () => this.settingTimeout());
-    }
-
     clearAmountInputs() {
         const amountInputs = document.querySelectorAll('.amount-input');
         const extraInputs = document.querySelectorAll('.extra-input');
@@ -1115,33 +1123,6 @@ class FlowAccountMenu {
         // In case the loader does not exist, return a no-op function.
         return () => {};
     }
-
-
-    /*showLoading(show, message = 'กำลังประมวลผล...') {
-        let loader = document.getElementById('loading-overlay');
-
-        if (show) {
-            if (!loader) {
-                loader = document.createElement('div');
-                loader.id = 'loading-overlay';
-                loader.className = 'loading-overlay';
-                document.body.appendChild(loader);
-            }
-            loader.textContent = message;
-            loader.style.display = 'flex';
-
-            return (newMessage) => {
-                if (loader) {
-                    loader.textContent = newMessage;
-                }
-            };
-        }
-        else if (loader) {
-            document.body.removeChild(loader);
-        }
-
-        return () => {};
-    }*/
 
     showNotification(message, type = 'info', delay = 3000) {
         const notification = document.createElement('div');
