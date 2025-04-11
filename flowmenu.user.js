@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.66
+// @version      1.67
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -507,10 +507,6 @@ class FlowAccountMenu {
                 justify-content: flex-end;
                 gap: 12px;
             }
-            .warning-text{
-                display: flex;
-                justify-content: flex-start;
-            }
             .setting-product-button {
                 padding: 0.75rem 1.75rem;
                 border-radius: 8px;
@@ -653,6 +649,94 @@ class FlowAccountMenu {
             .timeout-button:active {
                 transform: translateY(0);
             }
+
+/*-------------------*/
+/* CONFIRMATION BOX  */
+/*-------------------*/
+
+            .confirmation-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(0, 0, 0, 0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 100000;
+                opacity: 0;
+                visibility: hidden;
+                transition: all 0.3s ease;
+            }
+
+            .confirmation-overlay.visible {
+                opacity: 1;
+                visibility: visible;
+            }
+
+            .confirmation-dialog {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                width: 350px;
+                max-width: 90%;
+                overflow: hidden;
+                transform: translateY(20px);
+                transition: transform 0.5s ease;
+            }
+
+            .confirmation-overlay.visible .confirmation-dialog {
+                transform: translateY(0);
+            }
+
+            .confirmation-header {
+                background-color: #f8f9fa;
+                padding: 16px;
+                border-bottom: 1px solid #e9ecef;
+                font-weight: bold;
+                font-size: 16px;
+            }
+
+            .confirmation-body {
+                padding: 20px 16px;
+                line-height: 1.5;
+            }
+
+            .confirmation-footer {
+                padding: 12px 16px;
+                display: flex;
+                justify-content: flex-end;
+                gap: 8px;
+                border-top: 1px solid #e9ecef;
+            }
+
+            .confirmation-button {
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                border: none;
+                font-weight: 500;
+                transition: background-color 0.2s;
+            }
+
+            .confirmation-button.confirm {
+                background-color: #2898CB;
+                color: white;
+            }
+
+            .confirmation-button.confirm:hover {
+                background-color: #2887B6;
+            }
+
+            .confirmation-button.cancel {
+                background-color: #6c757d;
+                color: white;
+            }
+
+            .confirmation-button.cancel:hover {
+                background-color: #5a6268;
+            }
         `);
     }
 
@@ -679,6 +763,19 @@ class FlowAccountMenu {
     }
 
     initApplication() {
+        const confirmationDialog = document.createElement('div');
+        confirmationDialog.className = 'confirmation-overlay';
+        confirmationDialog.innerHTML = `
+            <div class="confirmation-dialog">
+                <div class="confirmation-header">ยืนยันการล้างจำนวน</div>
+                <div class="confirmation-body">พบจำนวนที่กรอกไว้อยู่ ต้องการล้างจำนวนทั้งหมดก่อนหรือไม่?</div>
+                <div class="confirmation-footer">
+                    <button class="confirmation-button cancel">ยกเลิก</button>
+                    <button class="confirmation-button confirm">ล้างจำนวน</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(confirmationDialog);
         this.app = document.createElement('div');
         this.app.id = 'app-container';
         this.app.innerHTML = `
@@ -737,7 +834,6 @@ class FlowAccountMenu {
           </div>
         `;
         document.body.appendChild(this.app);
-
         this.setupFilterDropdown();
 
         document.getElementById('filter-select').addEventListener('change', this.filterTable);
@@ -977,6 +1073,41 @@ class FlowAccountMenu {
         this.filterTable();
     }
 
+    checkForNonZeroInputs() {
+        const amountInputs = document.querySelectorAll('.amount-input');
+        const extraInputs = document.querySelectorAll('.extra-input');
+
+        for (let i = 0; i < amountInputs.length; i++) {
+            if ((parseInt(amountInputs[i].value, 10) || 0) > 0) return true;
+            if ((parseInt(extraInputs[i].value, 10) || 0) > 0) return true;
+        }
+
+        return false;
+    }
+
+    showConfirmationDialog() {
+        return new Promise((resolve) => {
+            const dialog = document.querySelector('.confirmation-overlay');
+            const confirmBtn = dialog.querySelector('.confirm');
+            const cancelBtn = dialog.querySelector('.cancel');
+
+            dialog.classList.add('visible');
+
+            const handleResponse = (result) => {
+                dialog.classList.remove('visible');
+                confirmBtn.removeEventListener('click', confirmHandler);
+                cancelBtn.removeEventListener('click', cancelHandler);
+                resolve(result);
+            };
+
+            const confirmHandler = () => handleResponse(true);
+            const cancelHandler = () => handleResponse(false);
+
+            confirmBtn.addEventListener('click', confirmHandler);
+            cancelBtn.addEventListener('click', cancelHandler);
+        });
+    }
+
     show() {
         if(this.app.style.display === 'block'){
             this.hide();
@@ -1006,8 +1137,17 @@ class FlowAccountMenu {
             // Add click handler
         this.openAppButton.addEventListener('click', () => {
             if (this.app) {
+                const style = this.app.style.display
                 this.show();
                 this.updateSelectedCount();
+
+                if (this.checkForNonZeroInputs() && style == 'none') {
+                    this.showConfirmationDialog().then(shouldClear => {
+                        if (shouldClear) {
+                            this.clearAmountInputs();
+                        }
+                    });
+                }
             }
         });
 
@@ -1095,9 +1235,15 @@ class FlowAccountMenu {
 
             // Create and append the message element
             const messageElem = document.createElement('div');
+            const warning = document.createElement('div');
             messageElem.textContent = message;
-            messageElem.style.marginBottom = '10px';
+            messageElem.style.marginBottom = '5px';
+            warning.textContent = '*อย่าปิดหรือเปลี่ยนหน้าขณะโปรแกรมกำลังทำงาน*'
+            warning.style.marginBottom = '10px';
+            warning.style.color = 'red';
+            warning.style.fontSize = '0.6em';
             loader.appendChild(messageElem);
+            loader.appendChild(warning);
 
             // Create and append the "Stop" button
             const stopButton = document.createElement('button');
