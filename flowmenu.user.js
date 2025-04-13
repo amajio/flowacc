@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Account Menu
 // @namespace    http://tampermonkey.net/
-// @version      1.67
+// @version      1.68
 // @description  Automatically populate data into Invoice, Billing Note, and Quotations.
 // @author       AI code
 // @match        *.flowaccount.com/*/business/*
@@ -274,22 +274,6 @@ class FlowAccountMenu {
                 font-size: 1.5em;
                 color: #2898CB;
                 backdrop-filter: blur(1px);
-            }
-            #force-stop-button{
-                width: 100px;
-                font-size: 0.55em;
-                cursor: pointer;
-                color: #ff4444;
-                border: none;
-                border: 2px solid #e0e0e0;
-                border-radius: 5px;
-                background-color: white;
-            }
-            #force-stop-button:hover{
-                color: white;
-                background-color: #ff4444;
-                border: 2px solid #ff4444;
-                transition: all 0.12s ease;
             }
             .notification {
                 position: fixed;
@@ -743,18 +727,17 @@ class FlowAccountMenu {
     initConstGlobal(){
         this.PATHS = ['/invoices/', '/billing-notes/', '/quotations/'];
         this.DEFAULT_TIMEOUTS = {
-            DROPDOWN: 600,
-            ROW_PROCESSING: 800,
-            NEXT_ITEM: 100,
+            LIST_SELECT: 1500,
+            ROW_PROCESSING: 1600
         };
         this.TIMEOUTS = {
-            DROPDOWN: GM_getValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN),
-            ROW_PROCESSING: GM_getValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING),
-            NEXT_ITEM: GM_getValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM),
+            LIST_SELECT: GM_getValue('listSelectTimeout', this.DEFAULT_TIMEOUTS.LIST_SELECT),
+            ROW_PROCESSING: GM_getValue('listSelectTimeout', this.DEFAULT_TIMEOUTS.LIST_SELECT) + 100
         };
         this.productList = GM_getValue('productList', []);
         this.lastUrl = location.href;
         this.forceStop = false;
+        this.inProcess = false;
         this.cachedElements = {
             amountInputs: null,
             extraInputs: null,
@@ -910,7 +893,10 @@ class FlowAccountMenu {
         }, { passive: false });
 
         document.addEventListener('keydown', (event) => {
-            if (event.key === "Escape") this.hide();
+            if (event.key === "Escape") {
+                if(this.inProcess) this.forceStop = true;
+                if(this.app.style.display === 'block') this.hide();
+            }
             // Select only visible input fields inside the table
             const inputs = Array.from(document.querySelectorAll('input.amount-input, input.extra-input'))
             .filter(input => input.offsetParent !== null); // Only keep visible elements
@@ -1235,28 +1221,23 @@ class FlowAccountMenu {
 
             // Create and append the message element
             const messageElem = document.createElement('div');
+            const stopProcess = document.createElement('div');
             const warning = document.createElement('div');
             messageElem.textContent = message;
             messageElem.style.marginBottom = '5px';
-            warning.textContent = '*อย่าปิดหรือเปลี่ยนหน้าขณะโปรแกรมกำลังทำงาน*'
-            warning.style.marginBottom = '10px';
+            stopProcess.textContent = 'กดปุ่ม Esc เพื่อหยุดการทำงาน';
+            stopProcess.style.fontSize = '0.7em';
+            stopProcess.style.color = 'red';
+            stopProcess.style.textAlign = 'center';
+            stopProcess.style.marginBottom = '5px';
+            warning.setAttribute('style', 'white-space: pre;');
+            warning.textContent = '*เลี่ยงการกระทำอื่นๆบนหน้าจอในขณะโปรแกรมกำลังทำงาน\nเพื่อไม่ให้เกิดการผิดพลาดในการใส่ข้อมูล*';
             warning.style.color = 'red';
-            warning.style.fontSize = '0.6em';
+            warning.style.fontSize = '0.5em';
+            warning.style.textAlign = 'center';
             loader.appendChild(messageElem);
+            loader.appendChild(stopProcess);
             loader.appendChild(warning);
-
-            // Create and append the "Stop" button
-            const stopButton = document.createElement('button');
-            stopButton.textContent = 'หยุดการทำงาน';
-            stopButton.id = 'force-stop-button';
-            stopButton.addEventListener('click', () => {
-                // Remove the loader when the button is clicked
-                if (loader) {
-                    this.forceStop = true;
-                    //document.body.removeChild(loader);
-                }
-            });
-            loader.appendChild(stopButton);
 
             // Return an updater function for the message element
             return (newMessage) => {
@@ -1477,7 +1458,7 @@ class FlowAccountMenu {
             if (dropdownOptions.length > 0) {
                 dropdownOptions[0].click();
             }
-        }, this.TIMEOUTS.DROPDOWN);
+        }, this.TIMEOUTS.LIST_SELECT);
     }
 
     processSelectedProducts() {
@@ -1512,6 +1493,7 @@ class FlowAccountMenu {
 
             this.clearSearch();
             this.hide();
+            this.inProcess = true;
             let inputIndex = 1;
             let itemInProcess = 1;
             let selectedProductIndex = 0;
@@ -1524,10 +1506,11 @@ class FlowAccountMenu {
                     this.enableKeyboardInput();
                     if(this.forceStop){
                        this.forceStop = false;
-                       this.showNotification('หยุดการทำงาน', 'error');
+                       this.showNotification('บังคับหยุดการทำงาน', 'error');
                     }else{
                        this.showNotification('ใส่ข้อมูลเสร็จสิ้น', 'success');
                     }
+                    this.inProcess = false;
                     return;
                 }
 
@@ -1535,7 +1518,7 @@ class FlowAccountMenu {
 
                 if (selectedProduct.amount === 0 && selectedProduct.extra === 0) {
                     selectedProductIndex++;
-                    setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                    processNextInput();
                     return;
                 }
 
@@ -1563,7 +1546,7 @@ class FlowAccountMenu {
 
                 if (productInput.value.trim() !== "") {
                     inputIndex++;
-                    setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                    processNextInput();
                     return;
                 }
 
@@ -1574,7 +1557,7 @@ class FlowAccountMenu {
                     updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
 
                     setTimeout(() => {
-                        if (amountInput) {
+                        if (amountInput && selectedProduct.amount > 1) {
                             this.simulateTyping(amountInput, selectedProduct.amount);
                             amountInput.focus();
                             const changeEvent = new Event('change', { bubbles: true, cancelable: true });
@@ -1583,44 +1566,42 @@ class FlowAccountMenu {
 
                         // If there's extra, add a new row after processing main amount
                         if (selectedProduct.extra > 0) {
-                            setTimeout(() => {
-                                if (addButton) {
-                                    addButton.click();
-                                }
+                            if (addButton) {
+                                addButton.click();
+                            }
 
-                                inputIndex++;
+                            inputIndex++;
+
+                            const extraRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
+                            const extraProductInput = document.evaluate(`${extraRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                            const extraAmountInput = document.evaluate(`${extraRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                            const extraPriceInput = document.evaluate(`${extraRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+
+                            if (extraProductInput && extraAmountInput && extraPriceInput) {
+                                this.simulateTyping(extraProductInput, selectedProduct.product);
+                                this.selectFirstDropdownOption(extraProductInput);
+                                updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
 
                                 setTimeout(() => {
-                                    const newRowXPath = `//*[@id="not-batch-document-table"]/flowaccount-product-item-table/table/tbody/tr[${inputIndex}]`;
-                                    const newProductInput = document.evaluate(`${newRowXPath}/td[3]/typeahead-custom/div/div[1]/span/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                                    const newAmountInput = document.evaluate(`${newRowXPath}/td[4]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                                    const newPriceInput = document.evaluate(`${newRowXPath}/td[6]/input`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-                                    if (newProductInput && newAmountInput && newPriceInput) {
-                                        this.simulateTyping(newProductInput, selectedProduct.product);
-                                        this.selectFirstDropdownOption(newProductInput);
-                                        updateLoader(`กำลังประมวลผล ${itemInProcess++} / ${totalProcessItems} รายการ`);
-
-                                        setTimeout(() => {
-                                            this.simulateTyping(newAmountInput, selectedProduct.extra);
-                                            newAmountInput.focus();
-                                            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                                            newAmountInput.dispatchEvent(changeEvent);
-
-                                            this.simulateTyping(newPriceInput, 0);
-                                            newPriceInput.focus();
-                                            const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
-                                            newPriceInput.dispatchEvent(priceChangeEvent);
-
-                                            selectedProductIndex++;
-                                            setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
-                                        }, this.TIMEOUTS.ROW_PROCESSING);
+                                    if(selectedProduct.extra > 1){ //default value is already 1
+                                        this.simulateTyping(extraAmountInput, selectedProduct.extra);
+                                        extraAmountInput.focus();
+                                        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                        extraAmountInput.dispatchEvent(changeEvent);
                                     }
+
+                                    this.simulateTyping(extraPriceInput, 0);
+                                    extraPriceInput.focus();
+                                    const priceChangeEvent = new Event('change', { bubbles: true, cancelable: true });
+                                    extraPriceInput.dispatchEvent(priceChangeEvent);
+
+                                    selectedProductIndex++;
+                                    processNextInput();
                                 }, this.TIMEOUTS.ROW_PROCESSING);
-                            }, this.TIMEOUTS.ROW_PROCESSING);
+                            }
                         } else {
                             selectedProductIndex++;
-                            setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                            processNextInput();
                         }
                     }, this.TIMEOUTS.ROW_PROCESSING);
                 }
@@ -1646,7 +1627,7 @@ class FlowAccountMenu {
                         }
 
                         selectedProductIndex++;
-                        setTimeout(processNextInput, this.TIMEOUTS.NEXT_ITEM);
+                        processNextInput();
                     }, this.TIMEOUTS.ROW_PROCESSING);
                 }
             };
@@ -1654,6 +1635,7 @@ class FlowAccountMenu {
             processNextInput();
         } catch (error) {
             this.showLoading(false);
+            this.inProcess = false;
             this.showNotification(`เกิดข้อผิดพลาด: ${error.message}`, 'error');
             this.enableKeyboardInput();
             console.error('Error processing products:', error);
@@ -1668,18 +1650,8 @@ class FlowAccountMenu {
             <h3 class="timeout-title">ตั้งค่าหน่วงเวลา</h3>
 
             <div class="timeout-input-container">
-                <label class="timeout-label">เวลา เลือกรายการ (มิลลิวินาที)</label>
-                <input type="number" class="timeout-input" name="DROPDOWN" />
-            </div>
-
-            <div class="timeout-input-container">
-                <label class="timeout-label">เวลา ใส่จำนวน (มิลลิวินาที)</label>
-                <input type="number" class="timeout-input" name="ROW_PROCESSING" />
-            </div>
-
-            <div class="timeout-input-container">
-                <label class="timeout-label">เวลา เริ่มรายการถัดไป (มิลลิวินาที)</label>
-                <input type="number" class="timeout-input" name="NEXT_ITEM" />
+                <label class="timeout-label">เวลาทำรายการ (1000=1วินาที)</label>
+                <input type="number" class="timeout-input" name="LIST_SELECT" />
             </div>
 
             <div class="timeout-button-container">
@@ -1692,16 +1664,7 @@ class FlowAccountMenu {
         document.body.appendChild(overlay);
 
         // Set initial values
-        overlay.querySelector('input[name="DROPDOWN"]').value = this.TIMEOUTS.DROPDOWN;
-        overlay.querySelector('input[name="ROW_PROCESSING"]').value = this.TIMEOUTS.ROW_PROCESSING;
-        overlay.querySelector('input[name="NEXT_ITEM"]').value = this.TIMEOUTS.NEXT_ITEM;
-
-        // Input event bindings
-        overlay.querySelectorAll('.timeout-input').forEach(input => {
-            input.addEventListener('input', () => {
-                this.TIMEOUTS[input.name] = parseInt(input.value);
-            });
-        });
+        overlay.querySelector('input[name="LIST_SELECT"]').value = this.TIMEOUTS.LIST_SELECT;
 
         const closeOverlay = () => {
             overlay.classList.remove('active');
@@ -1713,48 +1676,25 @@ class FlowAccountMenu {
 
         // Buttons
         overlay.querySelector('#timeout-save').addEventListener('click', () => {
-            let dropdown = parseInt(this.TIMEOUTS.DROPDOWN);
-            let rowProcessing = parseInt(this.TIMEOUTS.ROW_PROCESSING);
-
-            if (rowProcessing - dropdown < 100) {
-                dropdown = rowProcessing - 100;
-                this.TIMEOUTS.DROPDOWN = dropdown;
-                overlay.querySelector('input[name="DROPDOWN"]').value = dropdown;
-                this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
+            let inputTime = parseInt(overlay.querySelector('input[name="LIST_SELECT"]').value);//parseInt(this.TIMEOUTS.LIST_SELECT);
+            if(inputTime < 600){
+                this.TIMEOUTS.LIST_SELECT = 600;
+                overlay.querySelector('input[name="LIST_SELECT"]').value = 600;
+                this.showNotification('เวลาน้อยเกินไป (ควรมากกว่า 600 มิลลิวินาที)', 'error', 3000);
                 return;
             }
-
-            if (dropdown > rowProcessing) {
-                rowProcessing = dropdown + 100;
-                this.TIMEOUTS.ROW_PROCESSING = rowProcessing;
-                overlay.querySelector('input[name="ROW_PROCESSING"]').value = rowProcessing;
-                this.showNotification('เวลา [ใส่จำนวน] ต้องมากกว่าเวลา [เลือกรายการ] อย่างน้อย 100 มิลลิวินาที', 'error', 2500);
-                return;
-            }
-
-            GM_setValue('dropdownTimeout', this.TIMEOUTS.DROPDOWN);
-            GM_setValue('rowProcessingTimeout', this.TIMEOUTS.ROW_PROCESSING);
-            GM_setValue('nextItemTimeout', this.TIMEOUTS.NEXT_ITEM);
+            this.TIMEOUTS.LIST_SELECT = inputTime;
+            GM_setValue('listSelectTimeout', this.TIMEOUTS.LIST_SELECT);
+            this.TIMEOUTS.ROW_PROCESSING = this.TIMEOUTS.LIST_SELECT + 100;
             this.showNotification('บันทึกเรียบร้อยแล้ว', 'success');
             closeOverlay();
         });
 
         overlay.querySelector('#timeout-reset').addEventListener('click', () => {
-            this.TIMEOUTS.DROPDOWN = this.DEFAULT_TIMEOUTS.DROPDOWN;
-            this.TIMEOUTS.ROW_PROCESSING = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
-            this.TIMEOUTS.NEXT_ITEM = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
-
-            overlay.querySelector('input[name="DROPDOWN"]').value = this.DEFAULT_TIMEOUTS.DROPDOWN;
-            overlay.querySelector('input[name="ROW_PROCESSING"]').value = this.DEFAULT_TIMEOUTS.ROW_PROCESSING;
-            overlay.querySelector('input[name="NEXT_ITEM"]').value = this.DEFAULT_TIMEOUTS.NEXT_ITEM;
-
-            GM_setValue('dropdownTimeout', this.DEFAULT_TIMEOUTS.DROPDOWN);
-            GM_setValue('rowProcessingTimeout', this.DEFAULT_TIMEOUTS.ROW_PROCESSING);
-            GM_setValue('nextItemTimeout', this.DEFAULT_TIMEOUTS.NEXT_ITEM);
+            overlay.querySelector('input[name="LIST_SELECT"]').value = this.DEFAULT_TIMEOUTS.LIST_SELECT;
         });
 
         overlay.querySelector('#timeout-cancel').addEventListener('click', closeOverlay);
-
         setTimeout(() => {
             overlay.classList.add('active');
         }, 10);
